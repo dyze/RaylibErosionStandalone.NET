@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35913.81 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RaylibErosionStandalone.NET", "src\RaylibErosionStandalone.NET.csproj", "{97E10F54-A038-3C00-FB2E-D07AC0C837CE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{97E10F54-A038-3C00-FB2E-D07AC0C837CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97E10F54-A038-3C00-FB2E-D07AC0C837CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97E10F54-A038-3C00-FB2E-D07AC0C837CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97E10F54-A038-3C00-FB2E-D07AC0C837CE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DBC60642-A415-4422-A751-499234F09B01}
+	EndGlobalSection
+EndGlobal
