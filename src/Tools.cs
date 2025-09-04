@@ -6,6 +6,13 @@ internal static class Tools
 
     public static float randomRange(float min, float max)
     {
-        return min + rnd.NextSingle() / (static_cast<float>(RAND_MAX / (max - min)));
+        //TODO check equivalence. We should use same Random object as for ErosionMaker if we want to stick to original code
+        return min + rnd.Next(0, 32767) / ((float)32767 / (max - min));
+        //return min + static_cast <float> (rand()) / (static_cast <float> (RAND_MAX / (max - min)));
+    }
+
+    public static float Lerp(float firstFloat, float secondFloat, float by)
+    {
+        return firstFloat * (1 - by) + secondFloat * by;
     }
 }
