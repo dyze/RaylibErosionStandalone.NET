@@ -51,8 +51,8 @@ class App
 
     private Vector4 _ambc = new(0.22f, 0.17f, 0.41f, 0.2f); // current ambient color & intensity
 
-    private List<TreeBillboard> _noTrees; // keep empty
-    private List<TreeBillboard> _trees; // fill with tree data
+    private List<TreeBillboard> _noTrees = new(); // keep empty
+    private List<TreeBillboard> _trees = new(); // fill with tree data
 
     private int _totalDroplets = 0; // total amount of droplets simulated
     private int _dropletsSinceLastTreeRegen = 0; // used to regenerate trees after certain droplets have fallen
@@ -78,7 +78,7 @@ class App
 
     private float _treeMoveFactor = 0.0f;
     private int _treeMoveFactorLoc;
-    private List<Texture2D> _treeTextures;
+    private List<Texture2D> _treeTextures = [];
 
     //private Shader _waterShader;
     private float _cloudMoveFactor = 0.0f;
@@ -98,9 +98,9 @@ class App
 
     private ErosionMaker _erosionMaker;
 
-    private static ClipShaders _clipShaders;
+    private static ClipShaders _clipShaders = new();
 
-    private List<float> _mapData;
+    private float[] _mapData;
     private Texture2D _heightmapTexture;
 
     private List<Vector4> _ambientColors;
@@ -118,6 +118,9 @@ class App
 
             //TODO check if equivalence is correct
             var colors = Raylib.LoadImageColors(ambientColorsImage);
+            if (colors == null)
+                throw new FileLoadException("ambientGradient can't be read");
+
             _ambientColors = [];
             for (var i = 0; i < ambientColorsImage.Width; i++)
             {
@@ -157,22 +160,7 @@ class App
             //Raylib.SetCameraMode(camera, CAMERA_THIRD_PERSON);
 
 
-            // Initialize the erosion maker
-            _erosionMaker = ErosionMaker.GetInstance();
 
-
-            Image initialHeightmapImage =
-                Raylib.GenImagePerlinNoise(MapResolution, MapResolution, 50, 50, 4.0f); // generate fractal perlin noise
-            _mapData = new List<float>(MapResolution * MapResolution);
-
-            // Extract pixels and put them in mapData
-            Color* pixels = Raylib.LoadImageColors(initialHeightmapImage);
-            for (var i = 0; i < MapResolution * MapResolution; i++)
-            {
-                _mapData[i] = pixels[i].R / 255.0f;
-            }
-
-            Erode(pixels);
 
 
             PrepareTerrain();
@@ -180,6 +168,25 @@ class App
             PrepareOceanFloor();
             PrepareClouds();
             PrepareSkyBox();
+
+
+
+            // Initialize the erosion maker
+            _erosionMaker = ErosionMaker.GetInstance();
+
+
+            Image initialHeightmapImage =
+                Raylib.GenImagePerlinNoise(MapResolution, MapResolution, 50, 50, 4.0f); // generate fractal perlin noise
+            _mapData = new float[MapResolution * MapResolution];
+
+            // Extract pixels and put them in mapData
+            Color* pixels = Raylib.LoadImageColors(initialHeightmapImage);
+            for (var i = 0; i < MapResolution * MapResolution; i++)
+            {
+                _mapData[i] = pixels[i].R / 255.0f;
+            }
+            Erode(pixels);
+
             PrepareTrees();
             PrepareLights();
 
@@ -219,6 +226,7 @@ class App
 
 
                 Raylib.BeginDrawing();
+                rlImGui.Begin();
 
 
                 // render stuff to reflection FBO
@@ -680,7 +688,7 @@ class App
     {
         unsafe
         {
-            _lights.Add(Rlights.CreateLight(
+            var light = Rlights.CreateLight(
                 LightType.Directional,
                 new Vector3(20, 10, 0),
                 Vector3.Zero,
@@ -689,7 +697,8 @@ class App
                     _terrainModel.Materials[0].Shader, _oceanModel.Materials[0].Shader, _treeShader,
                     _skybox.Materials[0].Shader
                 ]
-            ));
+            );
+            _lights.Add(light);
         }
     }
 
@@ -699,8 +708,9 @@ class App
         {
             for (var i = 0; i < TreeTextureCount; i++)
             {
-                _treeTextures[i] = Raylib.LoadTexture($"resources/trees/b/{i}.png"); // variant b of trees looks much better
-                Raylib.SetTextureFilter(_treeTextures[i], TextureFilter.Bilinear);
+                var texture = Raylib.LoadTexture($"resources/trees/b/{i}.png");
+                _treeTextures.Add(texture); // variant b of trees looks much better
+                Raylib.SetTextureFilter(texture, TextureFilter.Bilinear);
                 //GenTextureMipmaps(&treeTextures[i]); // looks better without
             }
 
@@ -765,9 +775,12 @@ class App
     }
 
     // generates (or regenerates) all tree billboards
-    void GenerateTrees(ErosionMaker erosionMaker, ref List<float> mapData, List<Texture2D> treeTextures,
+    void GenerateTrees(ErosionMaker erosionMaker, ref float[] mapData, List<Texture2D> treeTextures,
         ref List<TreeBillboard> trees, bool generateNew)
     {
+        if(generateNew)
+            trees.Clear();
+
         Vector3 billPosition = Vector3.Zero;
         Vector3 billNormal = Vector3.Zero;
         float grassSlopeThreshold = 0.2f; // different than in the terrain shader
@@ -833,22 +846,22 @@ class App
     private unsafe void PrepareOcean()
     {
         Mesh oceanMesh = Raylib.GenMeshPlane(5120, 5120, 10, 10);
-        Model oceanModel = Raylib.LoadModelFromMesh(oceanMesh);
+        _oceanModel = Raylib.LoadModelFromMesh(oceanMesh);
         _dudvTex = Raylib.LoadTexture("resources/waterDUDV.png");
         Raylib.SetTextureFilter(_dudvTex, TextureFilter.Bilinear);
         Raylib.GenTextureMipmaps(ref _dudvTex);
-        oceanModel.Transform = Raymath.MatrixTranslate(0, 0, 0);
-        oceanModel.Materials[0].Maps[0].Texture = _reflectionBuffer.Texture; // uniform texture0
-        oceanModel.Materials[0].Maps[1].Texture = _refractionBuffer.Texture; // uniform texture1
-        oceanModel.Materials[0].Maps[2].Texture = _dudvTex; // uniform texture2
-        oceanModel.Materials[0].Shader =
+        _oceanModel.Transform = Raymath.MatrixTranslate(0, 0, 0);
+        _oceanModel.Materials[0].Maps[0].Texture = _reflectionBuffer.Texture; // uniform texture0
+        _oceanModel.Materials[0].Maps[1].Texture = _refractionBuffer.Texture; // uniform texture1
+        _oceanModel.Materials[0].Maps[2].Texture = _dudvTex; // uniform texture2
+        _oceanModel.Materials[0].Shader =
             Raylib.LoadShader("resources/shaders/water.vert", "resources/shaders/water.frag");
         _waterMoveFactor = 0.0f;
-        _waterMoveFactorLoc = Raylib.GetShaderLocation(oceanModel.Materials[0].Shader, "moveFactor");
-        oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
-            Raylib.GetShaderLocation(oceanModel.Materials[0].Shader, "matModel");
-        oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
-            Raylib.GetShaderLocation(oceanModel.Materials[0].Shader, "viewPos");
+        _waterMoveFactorLoc = Raylib.GetShaderLocation(_oceanModel.Materials[0].Shader, "moveFactor");
+        _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
+            Raylib.GetShaderLocation(_oceanModel.Materials[0].Shader, "matModel");
+        _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
+            Raylib.GetShaderLocation(_oceanModel.Materials[0].Shader, "viewPos");
     }
 
     private unsafe void PrepareClouds()
@@ -857,17 +870,17 @@ class App
         Raylib.SetTextureFilter(cloudTexture, TextureFilter.Bilinear);
         Raylib.GenTextureMipmaps(&cloudTexture);
         Mesh cloudMesh = Raylib.GenMeshPlane(51200, 51200, 10, 10);
-        Model cloudModel = Raylib.LoadModelFromMesh(cloudMesh);
-        cloudModel.Transform = Raymath.MatrixTranslate(0, 1000.0f, 0);
-        cloudModel.Materials[0].Shader =
+        _cloudModel = Raylib.LoadModelFromMesh(cloudMesh);
+        _cloudModel.Transform = Raymath.MatrixTranslate(0, 1000.0f, 0);
+        _cloudModel.Materials[0].Shader =
             Raylib.LoadShader("resources/shaders/cirrostratus.vert", "resources/shaders/cirrostratus.frag");
         _cloudMoveFactor = 0.0f;
-        _cloudMoveFactorLoc = Raylib.GetShaderLocation(cloudModel.Materials[0].Shader, "moveFactor");
-        _cloudDaytimeLoc = Raylib.GetShaderLocation(cloudModel.Materials[0].Shader, "daytime");
-        cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
-            Raylib.GetShaderLocation(cloudModel.Materials[0].Shader, "matModel");
-        cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
-            Raylib.GetShaderLocation(cloudModel.Materials[0].Shader, "viewPos");
+        _cloudMoveFactorLoc = Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "moveFactor");
+        _cloudDaytimeLoc = Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "daytime");
+        _cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
+            Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "matModel");
+        _cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
+            Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "viewPos");
     }
 
     private void PrepareSkyBox()
@@ -934,7 +947,7 @@ class App
             _terrainModel.Materials[0].Maps[2].Texture = _heightmapTexture;
             _terrainModel.Materials[0].Shader =
                 Raylib.LoadShader("resources/shaders/terrain.vert", "resources/shaders/terrain.frag");
-            // Get some shader loactions
+            // Get some shader loactions\
             _terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
                 Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "matModel");
             _terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =

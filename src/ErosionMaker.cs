@@ -84,7 +84,7 @@ internal sealed class ErosionMaker
     }
 
     // simulate erosion with the given amount of droplets
-    public void Erode(ref List<float> mapData, int mapSize, int dropletAmount, bool resetSeed)
+    public void Erode(ref float[] mapData, int mapSize, int dropletAmount, bool resetSeed)
     {
         Initialize(mapSize, resetSeed);
 
@@ -196,7 +196,7 @@ internal sealed class ErosionMaker
     }
 
     // applies a radial gradient to the heightmap in order to flatten the outer borders
-    public void Gradient(ref List<float> mapData, int mapSize, float normalizedOffset, GradientType gradientType)
+    public void Gradient(ref float[] mapData, int mapSize, float normalizedOffset, GradientType gradientType)
     {
         float radius = ((float)mapSize / 2.0f);
         for (var y = 0; y < mapSize; y++)
@@ -246,7 +246,7 @@ internal sealed class ErosionMaker
         }
     }
 
-    HeightAndGradient CalculateHeightAndGradient(ref List<float> mapData, int mapSize, float posX, float posY)
+    HeightAndGradient CalculateHeightAndGradient(ref float[] mapData, int mapSize, float posX, float posY)
     {
         int coordX = (int)posX;
         int coordY = (int)posY;
@@ -371,7 +371,7 @@ internal sealed class ErosionMaker
         return value;
     }
 
-    public Vector3 GetNormal(ref List<float> mapData, int mapSize, int x, int y)
+    public Vector3 GetNormal(ref float[] mapData, int mapSize, int x, int y)
     {
         // value from trial & error.
         // seems to work fine for the scales we are dealing with.
@@ -427,7 +427,7 @@ internal sealed class ErosionMaker
         return Vector3.Normalize(new Vector3(-dX, 1.0f / strength, -dY));
     }
 
-    public void Remap(ref List<float> map, int mapSize)
+    public void Remap(ref float[] map, int mapSize)
     {
         for (var i = 0; i < mapSize * mapSize; i++)
         {

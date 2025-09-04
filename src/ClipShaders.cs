@@ -10,8 +10,8 @@ internal  class ClipShaders
     private const int CLIP_SHADERS_COUNT = 1; // number of shaders that use a clipPlane
 
     public List<Shader> clipShaders = [];
-    public List<int> clipShaderHeightLocs;
-    public List<int> clipShaderTypeLocs;
+    public List<int> clipShaderHeightLocs = [];
+    public List<int> clipShaderTypeLocs = [];
 
     public int AddClipShader(Shader shader)
     {
