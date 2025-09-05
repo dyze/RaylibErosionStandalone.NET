@@ -152,7 +152,7 @@ class App
             //SetTextureWrap(refractionBuffer.texture, WRAP_CLAMP);
 
             // Define our custom camera to look into our 3d world
-            _camera = new Camera3D(new Vector3(12.0f, 32.0f, 22.0f),
+            _camera = new Camera3D(new Vector3(12.0f, 15, 22.0f),
                 new Vector3(0.0f, 0.0f, 0.0f),
                 new Vector3(0.0f, 1.0f, 0.0f),
                 45.0f,
@@ -160,15 +160,11 @@ class App
             //Raylib.SetCameraMode(camera, CAMERA_THIRD_PERSON);
 
 
-
-
-
             PrepareTerrain();
             PrepareOcean();
             PrepareOceanFloor();
             PrepareClouds();
             PrepareSkyBox();
-
 
 
             // Initialize the erosion maker
@@ -185,6 +181,7 @@ class App
             {
                 _mapData[i] = pixels[i].R / 255.0f;
             }
+
             Erode(pixels);
 
             PrepareTrees();
@@ -271,25 +268,41 @@ class App
                 Raylib.DrawFPS(10, 10);
 
 
-                //float hour = _daytime * 24.0f;
-                //float minute = (_daytime * 24.0f - hour) * 60.0f;
-                //// render GUI
-                //if (!Raylib.IsKeyDown(KeyboardKey.F6))
-                //{
-                //    if (!Raylib.IsKeyDown(KeyboardKey.F1))
-                //    {
-                //        Raylib.DrawText("Hold F1 to display controls. Hold ALT to enable cursor.", 10, 10, 20, Color.White);
-                //        Raylib.DrawText($"Droplets simulated: {_totalDroplets}", 10, 40, 20, Color.White);
-                //        Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 70, 20, Color.White);
-                //        Raylib.DrawText($"{hour} : {minute}", Raylib.GetScreenWidth() - 80, 10, 20, Color.White);
-                //    }
-                //    else
-                //    {
-                //        Raylib.DrawText(
-                //            "Z - hold to erode\nX - press to erode 100000 droplets\nR - press to reset island (chebyshev)\nT - press to reset island (euclidean)\nY - press to reset island (manhattan)\nU - press to reset island (star)\nCTRL - toggle sun movement\nSpace - advance daytime\nS - display frame buffers\nA - display debug\nF2 - toggle 60 FPS lock\nF3 - change window resolution\nF4 - toggle fullscreen\nF5 - toggle application buffer\nF6 - hold to hide GUI\nF9 - take screenshot",
-                //            10, 10, 20, Color.White);
-                //    }
-                //}
+                float hour = _daytime * 24.0f;
+                float minute = (_daytime * 24.0f - hour) * 60.0f;
+                // render GUI
+                if (!Raylib.IsKeyDown(KeyboardKey.F6))
+                {
+                    if (!Raylib.IsKeyDown(KeyboardKey.F1))
+                    {
+                        Raylib.DrawText("Hold F1 to display controls. Hold ALT to enable cursor.", 10, 10, 20,
+                            Color.White);
+                        Raylib.DrawText($"Droplets simulated: {_totalDroplets}", 10, 40, 20, Color.White);
+                        Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 70, 20, Color.White);
+                        Raylib.DrawText($"{hour} : {minute}", Raylib.GetScreenWidth() - 80, 10, 20, Color.White);
+                    }
+                    else
+                    {
+                        Raylib.DrawText(
+                            @"Z - hold to erode
+                            X - press to erode 100000 droplets
+                            R - press to reset island (chebyshev)
+                            T - press to reset island (euclidean)
+                            Y - press to reset island (manhattan)
+                            U - press to reset island (star)
+                            CTRL - toggle sun movement
+                            Space - advance daytime
+                            C - display frame buffers
+                            V - display debug
+                            F2 - toggle 60 FPS lock
+                            F3 - change window resolution
+                            F4 - toggle fullscreen
+                            F5 - toggle application buffer
+                            F6 - hold to hide GUI
+                            F9 - take screenshot",
+                            10, 10, 20, Color.White);
+                    }
+                }
 
                 //if (Raylib.IsKeyDown(KeyboardKey.Z))
                 //{
@@ -374,34 +387,34 @@ class App
                 //    }
                 //}
 
-                //if (Raylib.IsKeyDown(KeyboardKey.S))
-                //{
-                //    // display FBOS for debug
-                //    Raylib.DrawTextureRec(_reflectionBuffer.Texture,
-                //        new Rectangle(0.0f, 0.0f, _reflectionBuffer.Texture.Width, -_reflectionBuffer.Texture.Height),
-                //        new Vector2(
-                //            0.0f, 0.0f),
-                //        Color.White);
-                //    Raylib.DrawTextureRec(_refractionBuffer.Texture,
-                //        new Rectangle(0.0f, 0.0f, _refractionBuffer.Texture.Width, -_refractionBuffer.Texture.Height),
-                //        new Vector2(
-                //            0.0f, _reflectionBuffer.Texture.Height), Color.White);
-                //}
+                if (Raylib.IsKeyDown(KeyboardKey.C))
+                {
+                    // display FBOS for debug
+                    Raylib.DrawTextureRec(_reflectionBuffer.Texture,
+                        new Rectangle(0.0f, 0.0f, _reflectionBuffer.Texture.Width, -_reflectionBuffer.Texture.Height),
+                        new Vector2(
+                            0.0f, 0.0f),
+                        Color.White);
+                    Raylib.DrawTextureRec(_refractionBuffer.Texture,
+                        new Rectangle(0.0f, 0.0f, _refractionBuffer.Texture.Width, -_refractionBuffer.Texture.Height),
+                        new Vector2(
+                            0.0f, _reflectionBuffer.Texture.Height), Color.White);
+                }
 
-                //if (Raylib.IsKeyDown(KeyboardKey.A))
-                //{
-                //    // display other info for debug
-                //    Raylib.DrawTextureEx(_heightmapTexture,
-                //        new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
-                //        0f, 1f,
-                //        Color.White);
-                //    Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
-                //        _heightmapTexture.Width,
-                //        _heightmapTexture.Height,
-                //        Color.Green);
+                if (Raylib.IsKeyDown(KeyboardKey.V))
+                {
+                    // display other info for debug
+                    Raylib.DrawTextureEx(_heightmapTexture,
+                        new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
+                        0f, 1f,
+                        Color.White);
+                    Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
+                        _heightmapTexture.Width,
+                        _heightmapTexture.Height,
+                        Color.Green);
 
-                //    //DrawFPS(10, 70);
-                //}
+                    //DrawFPS(10, 70);
+                }
 
                 //if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
                 //{
@@ -508,18 +521,18 @@ class App
         Raylib.UnloadTexture(_heightmapTexture);
 
         //TODO check if replacement for former "Image heightmapImage = Raylib.LoadImageEx(pixels, MapResolution, MapResolution);"
-        Image heightmapImage = new Image();
-        Raylib.GenImageColor(MapResolution, MapResolution, Color.Red);
+        //Image heightmapImage = new Image();
+        var heightmapImage = Raylib.GenImageColor(MapResolution, MapResolution, Color.Red);
 
         var k = 0;
-        var dataAsChars = (char*)heightmapImage.Data;
+        var dataAsChars = (byte*)heightmapImage.Data;
 
         for (var i = 0; i < heightmapImage.Width * heightmapImage.Height * 4; i += 4)
         {
-            dataAsChars[i] = (char)pixels[k].R;
-            dataAsChars[i + 1] = (char)pixels[k].G;
-            dataAsChars[i + 2] = (char)pixels[k].B;
-            dataAsChars[i + 3] = (char)pixels[k].A;
+            dataAsChars[i] = (byte)pixels[k].R;
+            dataAsChars[i + 1] = (byte)pixels[k].G;
+            dataAsChars[i + 2] = (byte)pixels[k].B;
+            dataAsChars[i + 3] = (byte)pixels[k].A;
             k++;
         }
 
@@ -555,7 +568,8 @@ class App
             // Make the light orbit
             _lights[0].Position.X = (float)(Math.Cos(_sunAngle) * _radius);
             _lights[0].Position.Y = (float)(Math.Sin(_sunAngle) * _radius);
-            _lights[0].Position.Z = (float)Math.Max(Math.Sin(_sunAngle) * _radius * 0.9f, -_radius / 4.0f); // skew sun orbit
+            _lights[0].Position.Z =
+                (float)Math.Max(Math.Sin(_sunAngle) * _radius * 0.9f, -_radius / 4.0f); // skew sun orbit
 
             Rlights.UpdateLightValues(_lights[0]);
 
@@ -564,7 +578,8 @@ class App
                 _terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
-            Raylib.SetShaderValue(_oceanModel.Materials[0].Shader, _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
+            Raylib.SetShaderValue(_oceanModel.Materials[0].Shader,
+                _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
         }
@@ -595,17 +610,24 @@ class App
             }
 
             _sunAngle = Tools.Lerp(-90, 270, _daytime) * Raylib.DEG2RAD; // -90 midnight, 90 midday
-            var nDaytime = (float)Math.Sin(_sunAngle); // normalize it to make it look like a dot product on an unit sphere (shaders expect it this way) (-1, 1)
+            var nDaytime =
+                (float)Math.Sin(
+                    _sunAngle); // normalize it to make it look like a dot product on an unit sphere (shaders expect it this way) (-1, 1)
             var iDaytime = (int)(((nDaytime + 1.0f) / 2.0f) * (float)(_ambientColorsNumber - 1));
             _ambc[0] = _ambientColors[iDaytime].X; // ambient color based on daytime
             _ambc[1] = _ambientColors[iDaytime].Y;
             _ambc[2] = _ambientColors[iDaytime].Z;
             _ambc[3] = Tools.Lerp(0.05f, 0.25f, ((nDaytime + 1.0f) / 2.0f)); // ambient strength based on daytime
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainDaytimeLoc, nDaytime, ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_skybox.Materials[0].Shader, _skyboxDaytimeLoc, nDaytime, ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_skybox.Materials[0].Shader, _skyboxDayrotationLoc, _daytime, ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_cloudModel.Materials[0].Shader, _cloudDaytimeLoc, nDaytime, ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainDaytimeLoc, nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_skybox.Materials[0].Shader, _skyboxDaytimeLoc, nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_skybox.Materials[0].Shader, _skyboxDayrotationLoc, _daytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_cloudModel.Materials[0].Shader, _cloudDaytimeLoc, nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainAmbientLoc, _ambc,
+                ShaderUniformDataType.Vec4);
             Raylib.SetShaderValue(_treeShader, _treeAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
         }
     }
@@ -653,7 +675,7 @@ class App
 
     private void HandleWindowResize()
     {
-        if (Raylib.IsWindowResized() == false 
+        if (Raylib.IsWindowResized() == false
             && _windowSizeChanged == false)
             return;
 
@@ -682,7 +704,8 @@ class App
             _oceanModel.Materials[0].Maps[1].Texture = _refractionBuffer.Texture; // uniform texture1
 
             Raylib.SetTraceLogLevel(TraceLogLevel.Info);
-            Raylib.TraceLog(TraceLogLevel.Info, $"Window resized: {Raylib.GetScreenWidth()} x {Raylib.GetScreenHeight()}");
+            Raylib.TraceLog(TraceLogLevel.Info,
+                $"Window resized: {Raylib.GetScreenWidth()} x {Raylib.GetScreenHeight()}");
             Raylib.SetTraceLogLevel(TraceLogLevel.None);
         }
     }
@@ -753,7 +776,8 @@ class App
         Raylib.BeginMode3D(camera);
         for (var i = 0; i < ClipShadersCount; i++) // setup clip plane for shaders that use it
         {
-            Raylib.SetShaderValue(_clipShaders.clipShaders[i], _clipShaders.clipShaderTypeLocs[i], clipPlane, ShaderUniformDataType.Int);
+            Raylib.SetShaderValue(_clipShaders.clipShaders[i], _clipShaders.clipShaderTypeLocs[i], clipPlane,
+                ShaderUniformDataType.Int);
         }
 
         for (var i = 0; i < models.Count(); i++) // draw all 3d models in the scene
@@ -781,7 +805,7 @@ class App
     void GenerateTrees(ErosionMaker erosionMaker, ref float[] mapData, List<Texture2D> treeTextures,
         ref List<TreeBillboard> trees, bool generateNew)
     {
-        if(generateNew)
+        if (generateNew)
             trees.Clear();
 
         Vector3 billPosition = Vector3.Zero;
@@ -913,18 +937,22 @@ class App
                 ShaderUniformDataType.Int);
             Texture2D texHdr = Raylib.LoadTexture("resources/milkyWay.hdr"); // Load HDR panorama (sphere) texture
             Texture2D texHdr2 = Raylib.LoadTexture("resources/daytime.hdr"); // Load HDR panorama (sphere) texture
-                                                                             // Generate cubemap (texture with 6 quads-cube-mapping) from panorama HDR texture
-                                                                             // NOTE: New texture is generated rendering to texture, shader computes the sphere->cube coordinates mapping
+            // Generate cubemap (texture with 6 quads-cube-mapping) from panorama HDR texture
+            // NOTE: New texture is generated rendering to texture, shader computes the sphere->cube coordinates mapping
             _skybox.Materials[0].Maps[0].Texture = Raylib.LoadTexture("resources/skyGradient.png");
             Raylib.SetTextureFilter(_skybox.Materials[0].Maps[0].Texture, TextureFilter.Bilinear);
             Raylib.SetTextureWrap(_skybox.Materials[0].Maps[0].Texture, TextureWrap.Clamp);
 
             //TODO check if pixel format is the right one
-            _skybox.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture = GenTextureCubemap(shdrCubemap, texHdr, 1024, PixelFormat.UncompressedR8G8B8A8);
-            _skybox.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture = GenTextureCubemap(shdrCubemap, texHdr2, 1024, PixelFormat.UncompressedR8G8B8A8);
+            _skybox.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture =
+                GenTextureCubemap(shdrCubemap, texHdr, 1024, PixelFormat.UncompressedR8G8B8A8);
+            _skybox.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture =
+                GenTextureCubemap(shdrCubemap, texHdr2, 1024, PixelFormat.UncompressedR8G8B8A8);
 
-            Raylib.SetTextureFilter(_skybox.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture, TextureFilter.Bilinear);
-            Raylib.SetTextureFilter(_skybox.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture, TextureFilter.Bilinear);
+            Raylib.SetTextureFilter(_skybox.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture,
+                TextureFilter.Bilinear);
+            Raylib.SetTextureFilter(_skybox.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture,
+                TextureFilter.Bilinear);
             Raylib.GenTextureMipmaps(&_skybox.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture);
             Raylib.GenTextureMipmaps(&_skybox.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture);
             Raylib.UnloadTexture(texHdr); // Texture not required anymore, cubemap already generated
@@ -941,7 +969,7 @@ class App
             Mesh terrainMesh = Raylib.GenMeshPlane(32, 32, 256, 256); // Generate terrain mesh (RAM and VRAM)
             _terrainGradient =
                 Raylib.LoadTexture("resources/terrainGradient.png"); // color ramp of terrain (rock and grass)
-                                                                     //SetTextureFilter(terrainGradient, TextureFilter.Bilinear);
+            //SetTextureFilter(terrainGradient, TextureFilter.Bilinear);
             Raylib.SetTextureWrap(_terrainGradient, TextureWrap.Clamp);
             Raylib.GenTextureMipmaps(ref _terrainGradient);
             _terrainModel = Raylib.LoadModelFromMesh(terrainMesh); // Load model from generated mesh
@@ -956,13 +984,17 @@ class App
             _terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
                 Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "viewPos");
             _terrainDaytimeLoc = Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "daytime");
-            var cs = _clipShaders.AddClipShader(_terrainModel.Materials[0].Shader); // register as clip shader for automatization of clipPlanes
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderHeightLocs[cs], 0.0f, ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderTypeLocs[cs], 2, ShaderUniformDataType.Int);
+            var cs = _clipShaders.AddClipShader(_terrainModel.Materials[0]
+                .Shader); // register as clip shader for automatization of clipPlanes
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderHeightLocs[cs], 0.0f,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderTypeLocs[cs], 2,
+                ShaderUniformDataType.Int);
 
             // ambient light level
             _terrainAmbientLoc = Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "ambient");
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainAmbientLoc, _ambc,
+                ShaderUniformDataType.Vec4);
             Texture2D rockNormalMap = Raylib.LoadTexture("resources/rockNormalMap.png"); // normal map
             Raylib.SetTextureFilter(rockNormalMap, TextureFilter.Bilinear);
             Raylib.GenTextureMipmaps(&rockNormalMap);
@@ -1084,6 +1116,4 @@ class App
 
         return cubemap;
     }
-
-
 }
