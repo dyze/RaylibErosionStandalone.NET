@@ -114,7 +114,7 @@ class App
     {
         unsafe
         {
-            Image ambientColorsImage = Raylib.LoadImage("resources/ambientGradient.png");
+            var ambientColorsImage = Raylib.LoadImage("resources/ambientGradient.png");
 
             //TODO check if equivalence is correct
             var colors = Raylib.LoadImageColors(ambientColorsImage);
@@ -137,7 +137,7 @@ class App
             Raylib.InitWindow(ScreenWidth, ScreenHeight, "Terrain Erosion (.NET)");
             rlImGui.Setup();
 
-            _postProcessShader = Raylib.LoadShader("", "resources/shaders/postprocess.frag");
+            _postProcessShader = Raylib.LoadShader(null, "resources/shaders/postprocess.frag");
             // Create a RenderTexture2D to be used for render to texture
             _applicationBuffer =
                 Raylib.LoadRenderTexture(Raylib.GetScreenWidth(),
@@ -192,7 +192,7 @@ class App
 
             //rlDisableBackfaceCulling();
 
-            Raylib.SetTargetFPS(0); // Set our game to run at 60 frames-per-second
+            Raylib.SetTargetFPS(60); // Set our game to run at 60 frames-per-second
             Raylib.SetTraceLogLevel(TraceLogLevel.None); // disable logging from now on
 
 
@@ -228,6 +228,8 @@ class App
                 Raylib.BeginDrawing();
                 rlImGui.Begin();
 
+                Raylib.ClearBackground(Color.Black);
+
 
                 // render stuff to reflection FBO
                 Raylib.BeginTextureMode(_reflectionBuffer);
@@ -244,7 +246,7 @@ class App
                 Raylib.EndTextureMode();
 
                 // render stuff to normal application buffer
-                Raylib.BeginTextureMode(_applicationBuffer);
+                if (_useApplicationBuffer) Raylib.BeginTextureMode(_applicationBuffer);
                 Raylib.ClearBackground(Color.Yellow);
                 Render3DScene(_camera, _lights, [_skybox, _cloudModel, _terrainModel, _oceanFloorModel, _oceanModel],
                     _noTrees, 2);
@@ -266,201 +268,203 @@ class App
                     Raylib.EndShaderMode();
                 }
 
-                float hour = _daytime * 24.0f;
-                float minute = (_daytime * 24.0f - hour) * 60.0f;
-                // render GUI
-                if (!Raylib.IsKeyDown(KeyboardKey.F6))
-                {
-                    if (!Raylib.IsKeyDown(KeyboardKey.F1))
-                    {
-                        Raylib.DrawText("Hold F1 to display controls. Hold ALT to enable cursor.", 10, 10, 20, Color.White);
-                        Raylib.DrawText($"Droplets simulated: {_totalDroplets}", 10, 40, 20, Color.White);
-                        Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 70, 20, Color.White);
-                        Raylib.DrawText($"{hour} : {minute}", Raylib.GetScreenWidth() - 80, 10, 20, Color.White);
-                    }
-                    else
-                    {
-                        Raylib.DrawText(
-                            "Z - hold to erode\nX - press to erode 100000 droplets\nR - press to reset island (chebyshev)\nT - press to reset island (euclidean)\nY - press to reset island (manhattan)\nU - press to reset island (star)\nCTRL - toggle sun movement\nSpace - advance daytime\nS - display frame buffers\nA - display debug\nF2 - toggle 60 FPS lock\nF3 - change window resolution\nF4 - toggle fullscreen\nF5 - toggle application buffer\nF6 - hold to hide GUI\nF9 - take screenshot",
-                            10, 10, 20, Color.White);
-                    }
-                }
-
-                if (Raylib.IsKeyDown(KeyboardKey.Z))
-                {
-                    // Erode
-                    const int spd = 350;
-                    _erosionMaker.Erode(ref _mapData, MapResolution, spd, false);
-                    _totalDroplets += spd;
-                    _dropletsSinceLastTreeRegen += spd;
-
-                    UpdatePixels(pixels);
-
-                    if (_dropletsSinceLastTreeRegen > spd * 10)
-                    {
-                        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                        _dropletsSinceLastTreeRegen = 0;
-                    }
-                }
-
-                if (Raylib.IsKeyPressed(KeyboardKey.X))
-                {
-                    unsafe
-                    {
-                        // Erode
-                        var stopwatch = new Stopwatch();
-                        stopwatch.Start();
-                        _erosionMaker.Erode(ref _mapData, MapResolution, 100000, false);
-                        stopwatch.Stop();
-                        var elapsedTime = stopwatch.ElapsedMilliseconds;
-
-                        Raylib.SetTraceLogLevel(TraceLogLevel.Info);
-                        Raylib.TraceLog(TraceLogLevel.Info, $"Eroded 100000 droplets. Time elapsed: {elapsedTime} ms");
-                        Raylib.SetTraceLogLevel(TraceLogLevel.None);
-
-                        _totalDroplets += 100000;
-
-                        UpdatePixels(pixels);
-
-                        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                        _dropletsSinceLastTreeRegen = 0;
-                    }
-                }
-
-
-                if (Raylib.IsKeyPressed(KeyboardKey.R) || Raylib.IsKeyPressed(KeyboardKey.T) ||
-                    Raylib.IsKeyPressed(KeyboardKey.Y) ||
-                    Raylib.IsKeyPressed(KeyboardKey.U))
-                {
-                    unsafe
-                    {
-                        _totalDroplets = 0;
-                        pixels = Raylib.LoadImageColors(initialHeightmapImage);
-                        for (var i = 0; i < MapResolution * MapResolution; i++)
-                        {
-                            _mapData[i] = pixels[i].R / 255.0f;
-                        }
-
-                        // reinit map
-                        if (Raylib.IsKeyPressed(KeyboardKey.R))
-                        {
-                            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.SQUARE);
-                        }
-                        else if (Raylib.IsKeyPressed(KeyboardKey.T))
-                        {
-                            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.CIRCLE);
-                        }
-                        else if (Raylib.IsKeyPressed(KeyboardKey.Y))
-                        {
-                            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.DIAMOND);
-                        }
-                        else if (Raylib.IsKeyPressed(KeyboardKey.U))
-                        {
-                            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.STAR);
-                        }
-
-                        _erosionMaker.Remap(ref _mapData, MapResolution); // flatten beaches
-                                                                          // no need to reinitialize erosion
-
-                        UpdatePixels(pixels);
-
-                        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                        _dropletsSinceLastTreeRegen = 0;
-                    }
-                }
-
-                if (Raylib.IsKeyDown(KeyboardKey.S))
-                {
-                    // display FBOS for debug
-                    Raylib.DrawTextureRec(_reflectionBuffer.Texture,
-                        new Rectangle(0.0f, 0.0f, _reflectionBuffer.Texture.Width, -_reflectionBuffer.Texture.Height),
-                        new Vector2(
-                            0.0f, 0.0f),
-                        Color.White);
-                    Raylib.DrawTextureRec(_refractionBuffer.Texture,
-                        new Rectangle(0.0f, 0.0f, _refractionBuffer.Texture.Width, -_refractionBuffer.Texture.Height),
-                        new Vector2(
-                            0.0f, _reflectionBuffer.Texture.Height), Color.White);
-                }
-
-                if (Raylib.IsKeyDown(KeyboardKey.A))
-                {
-                    // display other info for debug
-                    Raylib.DrawTextureEx(_heightmapTexture,
-                        new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
-                        0f, 1f,
-                        Color.White);
-                    Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
-                        _heightmapTexture.Width,
-                        _heightmapTexture.Height,
-                        Color.Green);
-
-                    //DrawFPS(10, 70);
-                }
-
-                if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
-                {
-                    _dayrunning = !_dayrunning;
-                }
-
-                if (Raylib.IsKeyPressed(KeyboardKey.F2))
-                {
-                    if (_lockTo60Fps)
-                    {
-                        _lockTo60Fps = false;
-                        Raylib.SetTargetFPS(0);
-                    }
-                    else
-                    {
-                        _lockTo60Fps = true;
-                        Raylib.SetTargetFPS(60);
-                    }
-                }
-
-                if (Raylib.IsKeyPressed(KeyboardKey.F3))
-                {
-                    _currentDisplayResolutionIndex++;
-                    if (_currentDisplayResolutionIndex > 4)
-                        _currentDisplayResolutionIndex = 0;
-
-                    _windowSizeChanged = true;
-                    Raylib.SetWindowSize(_displayResolutions[_currentDisplayResolutionIndex].Width,
-                        _displayResolutions[_currentDisplayResolutionIndex].Height);
-                    Raylib.SetWindowPosition((Raylib.GetMonitorWidth(0) - Raylib.GetScreenWidth()) / 2,
-                        (Raylib.GetMonitorHeight(0) - Raylib.GetScreenHeight()) / 2);
-                }
-
-                if (Raylib.IsKeyPressed(KeyboardKey.F4))
-                {
-                    _windowSizeChanged = true;
-                    if (!Raylib.IsWindowFullscreen())
-                    {
-                        _windowWidthBeforeFullscreen = Raylib.GetScreenWidth();
-                        _windowHeightBeforeFullscreen = Raylib.GetScreenHeight();
-                        Raylib.SetWindowSize(Raylib.GetMonitorWidth(0), Raylib.GetMonitorHeight(0));
-                    }
-                    else
-                    {
-                        Raylib.SetWindowSize(_windowWidthBeforeFullscreen, _windowHeightBeforeFullscreen);
-                    }
-
-                    Raylib.ToggleFullscreen();
-                }
-
-
-                if (Raylib.IsKeyPressed(KeyboardKey.F5))
-                {
-                    _useApplicationBuffer = !_useApplicationBuffer;
-                }
-
-                if (Raylib.IsKeyPressed((KeyboardKey.F9)))
-                {
-                    // take a screenshot
-                    var fileName = $"screenshot-{DateTime.Now}.png";
-                    Raylib.TakeScreenshot(fileName);
-                }
-
                 Raylib.DrawFPS(10, 10);
+
+
+                //float hour = _daytime * 24.0f;
+                //float minute = (_daytime * 24.0f - hour) * 60.0f;
+                //// render GUI
+                //if (!Raylib.IsKeyDown(KeyboardKey.F6))
+                //{
+                //    if (!Raylib.IsKeyDown(KeyboardKey.F1))
+                //    {
+                //        Raylib.DrawText("Hold F1 to display controls. Hold ALT to enable cursor.", 10, 10, 20, Color.White);
+                //        Raylib.DrawText($"Droplets simulated: {_totalDroplets}", 10, 40, 20, Color.White);
+                //        Raylib.DrawText($"FPS: {Raylib.GetFPS()}", 10, 70, 20, Color.White);
+                //        Raylib.DrawText($"{hour} : {minute}", Raylib.GetScreenWidth() - 80, 10, 20, Color.White);
+                //    }
+                //    else
+                //    {
+                //        Raylib.DrawText(
+                //            "Z - hold to erode\nX - press to erode 100000 droplets\nR - press to reset island (chebyshev)\nT - press to reset island (euclidean)\nY - press to reset island (manhattan)\nU - press to reset island (star)\nCTRL - toggle sun movement\nSpace - advance daytime\nS - display frame buffers\nA - display debug\nF2 - toggle 60 FPS lock\nF3 - change window resolution\nF4 - toggle fullscreen\nF5 - toggle application buffer\nF6 - hold to hide GUI\nF9 - take screenshot",
+                //            10, 10, 20, Color.White);
+                //    }
+                //}
+
+                //if (Raylib.IsKeyDown(KeyboardKey.Z))
+                //{
+                //    // Erode
+                //    const int spd = 350;
+                //    _erosionMaker.Erode(ref _mapData, MapResolution, spd, false);
+                //    _totalDroplets += spd;
+                //    _dropletsSinceLastTreeRegen += spd;
+
+                //    UpdatePixels(pixels);
+
+                //    if (_dropletsSinceLastTreeRegen > spd * 10)
+                //    {
+                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
+                //        _dropletsSinceLastTreeRegen = 0;
+                //    }
+                //}
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.X))
+                //{
+                //    unsafe
+                //    {
+                //        // Erode
+                //        var stopwatch = new Stopwatch();
+                //        stopwatch.Start();
+                //        _erosionMaker.Erode(ref _mapData, MapResolution, 100000, false);
+                //        stopwatch.Stop();
+                //        var elapsedTime = stopwatch.ElapsedMilliseconds;
+
+                //        Raylib.SetTraceLogLevel(TraceLogLevel.Info);
+                //        Raylib.TraceLog(TraceLogLevel.Info, $"Eroded 100000 droplets. Time elapsed: {elapsedTime} ms");
+                //        Raylib.SetTraceLogLevel(TraceLogLevel.None);
+
+                //        _totalDroplets += 100000;
+
+                //        UpdatePixels(pixels);
+
+                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
+                //        _dropletsSinceLastTreeRegen = 0;
+                //    }
+                //}
+
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.R) || Raylib.IsKeyPressed(KeyboardKey.T) ||
+                //    Raylib.IsKeyPressed(KeyboardKey.Y) ||
+                //    Raylib.IsKeyPressed(KeyboardKey.U))
+                //{
+                //    unsafe
+                //    {
+                //        _totalDroplets = 0;
+                //        pixels = Raylib.LoadImageColors(initialHeightmapImage);
+                //        for (var i = 0; i < MapResolution * MapResolution; i++)
+                //        {
+                //            _mapData[i] = pixels[i].R / 255.0f;
+                //        }
+
+                //        // reinit map
+                //        if (Raylib.IsKeyPressed(KeyboardKey.R))
+                //        {
+                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.SQUARE);
+                //        }
+                //        else if (Raylib.IsKeyPressed(KeyboardKey.T))
+                //        {
+                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.CIRCLE);
+                //        }
+                //        else if (Raylib.IsKeyPressed(KeyboardKey.Y))
+                //        {
+                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.DIAMOND);
+                //        }
+                //        else if (Raylib.IsKeyPressed(KeyboardKey.U))
+                //        {
+                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.STAR);
+                //        }
+
+                //        _erosionMaker.Remap(ref _mapData, MapResolution); // flatten beaches
+                //                                                          // no need to reinitialize erosion
+
+                //        UpdatePixels(pixels);
+
+                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
+                //        _dropletsSinceLastTreeRegen = 0;
+                //    }
+                //}
+
+                //if (Raylib.IsKeyDown(KeyboardKey.S))
+                //{
+                //    // display FBOS for debug
+                //    Raylib.DrawTextureRec(_reflectionBuffer.Texture,
+                //        new Rectangle(0.0f, 0.0f, _reflectionBuffer.Texture.Width, -_reflectionBuffer.Texture.Height),
+                //        new Vector2(
+                //            0.0f, 0.0f),
+                //        Color.White);
+                //    Raylib.DrawTextureRec(_refractionBuffer.Texture,
+                //        new Rectangle(0.0f, 0.0f, _refractionBuffer.Texture.Width, -_refractionBuffer.Texture.Height),
+                //        new Vector2(
+                //            0.0f, _reflectionBuffer.Texture.Height), Color.White);
+                //}
+
+                //if (Raylib.IsKeyDown(KeyboardKey.A))
+                //{
+                //    // display other info for debug
+                //    Raylib.DrawTextureEx(_heightmapTexture,
+                //        new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
+                //        0f, 1f,
+                //        Color.White);
+                //    Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
+                //        _heightmapTexture.Width,
+                //        _heightmapTexture.Height,
+                //        Color.Green);
+
+                //    //DrawFPS(10, 70);
+                //}
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
+                //{
+                //    _dayrunning = !_dayrunning;
+                //}
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.F2))
+                //{
+                //    if (_lockTo60Fps)
+                //    {
+                //        _lockTo60Fps = false;
+                //        Raylib.SetTargetFPS(0);
+                //    }
+                //    else
+                //    {
+                //        _lockTo60Fps = true;
+                //        Raylib.SetTargetFPS(60);
+                //    }
+                //}
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.F3))
+                //{
+                //    _currentDisplayResolutionIndex++;
+                //    if (_currentDisplayResolutionIndex > 4)
+                //        _currentDisplayResolutionIndex = 0;
+
+                //    _windowSizeChanged = true;
+                //    Raylib.SetWindowSize(_displayResolutions[_currentDisplayResolutionIndex].Width,
+                //        _displayResolutions[_currentDisplayResolutionIndex].Height);
+                //    Raylib.SetWindowPosition((Raylib.GetMonitorWidth(0) - Raylib.GetScreenWidth()) / 2,
+                //        (Raylib.GetMonitorHeight(0) - Raylib.GetScreenHeight()) / 2);
+                //}
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.F4))
+                //{
+                //    _windowSizeChanged = true;
+                //    if (!Raylib.IsWindowFullscreen())
+                //    {
+                //        _windowWidthBeforeFullscreen = Raylib.GetScreenWidth();
+                //        _windowHeightBeforeFullscreen = Raylib.GetScreenHeight();
+                //        Raylib.SetWindowSize(Raylib.GetMonitorWidth(0), Raylib.GetMonitorHeight(0));
+                //    }
+                //    else
+                //    {
+                //        Raylib.SetWindowSize(_windowWidthBeforeFullscreen, _windowHeightBeforeFullscreen);
+                //    }
+
+                //    Raylib.ToggleFullscreen();
+                //}
+
+
+                //if (Raylib.IsKeyPressed(KeyboardKey.F5))
+                //{
+                //    _useApplicationBuffer = !_useApplicationBuffer;
+                //}
+
+                //if (Raylib.IsKeyPressed((KeyboardKey.F9)))
+                //{
+                //    // take a screenshot
+                //    var fileName = $"screenshot-{DateTime.Now}.png";
+                //    Raylib.TakeScreenshot(fileName);
+                //}
+
 
                 rlImGui.End();
                 Raylib.EndDrawing();
@@ -473,7 +477,6 @@ class App
 
             // Close window and OpenGL context
             rlImGui.Shutdown();
-            Raylib.CloseWindow();
         }
     }
 
