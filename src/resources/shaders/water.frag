@@ -73,4 +73,6 @@ void main(void)
 
 	float waterColorStrength = 0.1;
 	gl_FragColor = mix(mix(reflectColor,refractColor,fresnel),waterColor, waterColorStrength) + specularWater + specularPlane;
+
+	gl_FragColor =  reflectColor;
 }
