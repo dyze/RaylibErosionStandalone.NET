@@ -19,7 +19,6 @@ uniform float daytime; // -1 = midnight, 0 = sunrise/sunset, 1 = midday
 void main()
 {
     vec4 finalColor = texture2D(texture0, textureCoords + moveFactor);
-    //finalColor.a *= pow(1.0-abs(daytime),3.0);
+    finalColor.a *= pow(1.0-abs(daytime),3.0);
     gl_FragColor = finalColor;
-    //gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
 }

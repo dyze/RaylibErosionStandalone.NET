@@ -214,7 +214,9 @@ class App
             PrepareOcean();
             PrepareOceanFloor();
 
-            PrepareSkyBox();
+            //PrepareSkyBoxDayNightWithCubeMapShader();
+            //PrepareSkyBoxStatic();
+            PrepareSkyBoxDayNight();
 
 
             // Initialize the erosion maker
@@ -263,12 +265,12 @@ class App
                     Raylib.EnableCursor();
                 }
 
-                if(_animated)
+                if (_animated)
                 {
                     AnimateWater();
                     AnimateTrees();
                     AnimateClouds();
-                    AnimateDayTimeClouds();
+                    AnimateSkyBox();
                     AnimateDayTime();
                     AnimateLight();
                 }
@@ -491,29 +493,7 @@ class App
 
                 if (_debugInfoIsVisible)
                 {
-                    // display other info for debug
-                    Raylib.DrawTextureEx(_heightmapTexture,
-                        new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
-                        0f, 1f,
-                        Color.White);
-                    Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
-                        _heightmapTexture.Width,
-                        _heightmapTexture.Height,
-                        Color.Green);
-
-                    var text = "";
-                    foreach (var (key, value) in ModelsInfo)
-                    {
-                        text += $"{value.Name}={value.Visible}\n";
-                    }
-
-                    text += $"camera={_camera.Position}\n";
-
-                    Raylib.DrawText(
-                        text,
-                        10, Raylib.GetScreenHeight() / 2, 20, Color.White);
-
-                    //DrawFPS(10, 70);
+                    RenderDebugInfo();
                 }
 
                 //if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
@@ -591,6 +571,45 @@ class App
             // Close window and OpenGL context
             rlImGui.Shutdown();
         }
+    }
+
+    private void RenderDebugInfo()
+    {
+        var destinationWidth = 400;
+        var destinationHeight = 300;
+        var texture = Raylib.GetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap);
+        Raylib.DrawTexturePro(texture,
+            new Rectangle(0, 0, texture.Width, texture.Height),
+            new Rectangle(Raylib.GetScreenWidth() - destinationWidth,
+                0,
+                destinationWidth, destinationHeight),
+            Vector2.Zero, 
+            0f,
+            Color.White);
+
+        // display other info for debug
+        //Raylib.DrawTextureEx(_heightmapTexture,
+        //    new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
+        //    0f, 1f,
+        //    Color.White);
+        //Raylib.DrawRectangleLines(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20, 20,
+        //    _heightmapTexture.Width,
+        //    _heightmapTexture.Height,
+        //    Color.Green);
+
+        var text = "";
+        foreach (var (key, value) in ModelsInfo)
+        {
+            text += $"{value.Name}={value.Visible}\n";
+        }
+
+        text += $"camera={_camera.Position}\n";
+
+        Raylib.DrawText(
+            text,
+            10, Raylib.GetScreenHeight() / 2, 20, Color.White);
+
+        //DrawFPS(10, 70);
     }
 
     private unsafe void Erode(Color* pixels)
@@ -678,6 +697,7 @@ class App
                 _terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
+
             Raylib.SetShaderValue(_oceanModel.Materials[0].Shader,
                 _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
@@ -732,7 +752,7 @@ class App
         }
     }
 
-    private void AnimateDayTimeClouds()
+    private void AnimateSkyBox()
     {
         unsafe
         {
@@ -765,9 +785,7 @@ class App
     {
         _treeMoveFactor += treeSpeed * Raylib.GetFrameTime();
         while (_treeMoveFactor > 1.0f)
-        {
             _treeMoveFactor -= 1.0f;
-        }
 
         Raylib.SetShaderValue(_treeShader, _treeMoveFactorLoc, _treeMoveFactor, ShaderUniformDataType.Float);
     }
@@ -1047,108 +1065,150 @@ class App
         Raylib.TraceLog(TraceLogLevel.Info, "PrepareClouds OK");
     }
 
-    private void PrepareSkyBox()
+    private void PrepareSkyBoxStatic()
     {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBox...");
-        var cube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
-        _skyboxModel = Raylib.LoadModelFromMesh(cube);
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxStatic...");
 
-        // Load skybox shader and set required locations
-        // NOTE: Some locations are automatically set at shader loading
-        var shdrSkybox = Raylib.LoadShader("resources/shaders/glsl330/skybox.vs",
-            "resources/shaders/glsl330/skybox.fs");
+        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
+        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
+
+        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-static.vert",
+            "resources/shaders/glsl330/skybox-static.frag");
+
+        Raylib.SetShaderValue(shader,
+            Raylib.GetShaderLocation(shader, "environmentMap"),
+            MaterialMapIndex.Cubemap,
+            ShaderUniformDataType.Int);
 
         Raylib.SetShaderValue(
-            shdrSkybox,
-            Raylib.GetShaderLocation(shdrSkybox, "environmentMap"),
-            (int)MaterialMapIndex.Cubemap,
+            shader,
+            Raylib.GetShaderLocation(shader, "flipMode"),
+            2,
             ShaderUniformDataType.Int
         );
 
-        Raylib.SetShaderValue(
-            shdrSkybox,
-            Raylib.GetShaderLocation(shdrSkybox, "doGamma"),
-            0,
-            ShaderUniformDataType.Int
-        );
+        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
 
-        Raylib.SetShaderValue(
-            shdrSkybox,
-            Raylib.GetShaderLocation(shdrSkybox, "vflipped"),
-            0,
-            ShaderUniformDataType.Int
-        );
-
-        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shdrSkybox);
-
-        var img = Raylib.LoadImage("resources/Daylight Box UV.png"); //"skybox.png");
-        var cubemap = Raylib.LoadTextureCubemap(img, CubemapLayout.AutoDetect);
-        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubemap);
-        Raylib.UnloadImage(img);
+        var imgDay = Raylib.LoadImage("resources/Daylight Box UV.png");
+        var cubeMapDay = Raylib.LoadTextureCubemap(imgDay, CubemapLayout.AutoDetect);
+        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapDay);
+        Raylib.UnloadImage(imgDay); // Texture not required anymore, cubemap already generated
 
         ModelsInfo[ModelId.SkyBox].Model = _skyboxModel;
-
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBox OK");
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxStatic OK");
     }
 
-    //private void PrepareSkyBox()
-    //{
-    //    Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBox...");
-    //    unsafe
-    //    {
-    //        var cube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
-    //        _skyboxModel = Raylib.LoadModelFromMesh(cube);
+    private void PrepareSkyBoxDayNightWithCubeMapShader()
+    {
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNightWithCubeMapShader...");
 
-    //        _skyboxModel.Materials[0].Shader =
-    //            Raylib.LoadShader("resources/shaders/skybox.vert", "resources/shaders/skybox.frag");
-    //        _skyboxDaytimeLoc = Raylib.GetShaderLocation(_skyboxModel.Materials[0].Shader, "daytime");
-    //        _skyboxDayrotationLoc = Raylib.GetShaderLocation(_skyboxModel.Materials[0].Shader, "dayrotation");
-    //        _skyboxMoveFactor = 0.0f;
-    //        _skyboxMoveFactorLoc = Raylib.GetShaderLocation(_skyboxModel.Materials[0].Shader, "moveFactor");
-    //        Shader shdrCubemap = Raylib.LoadShader("resources/shaders/cubemap.vert", "resources/shaders/cubemap.frag");
+        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
+        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
 
-    //        Raylib.SetShaderValue(_skyboxModel.Materials[0].Shader,
-    //            Raylib.GetShaderLocation(_skyboxModel.Materials[0].Shader, "environmentMapNight"),
-    //            MaterialMapIndex.Cubemap,
-    //            ShaderUniformDataType.Int);
+        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-daynight.vert",
+            "resources/shaders/glsl330/skybox-daynight.frag");
 
-    //        Raylib.SetShaderValue(_skyboxModel.Materials[0].Shader,
-    //            Raylib.GetShaderLocation(_skyboxModel.Materials[0].Shader, "environmentMapDay"), MaterialMapIndex.Irradiance,
-    //            ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(shader,
+            Raylib.GetShaderLocation(shader, "environmentMapNight"),
+            MaterialMapIndex.Cubemap,
+            ShaderUniformDataType.Int);
 
-    //        Raylib.SetShaderValue(shdrCubemap, Raylib.GetShaderLocation(shdrCubemap, "equirectangularMap"), 0,
-    //            ShaderUniformDataType.Int);
+        Raylib.SetShaderValue(shader,
+            Raylib.GetShaderLocation(shader, "environmentMapDay"),
+            MaterialMapIndex.Irradiance,
+            ShaderUniformDataType.Int);
+
+        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
+
+        _skyboxDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
+        _skyboxDayrotationLoc = Raylib.GetShaderLocation(shader, "dayrotation");
+        _skyboxMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
+
+        var skyGradientTexture = Raylib.LoadTexture("resources/skyGradient.png");
+        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Albedo, ref skyGradientTexture);
+        Raylib.SetTextureFilter(skyGradientTexture, TextureFilter.Bilinear);
+        Raylib.SetTextureWrap(skyGradientTexture, TextureWrap.Clamp);
+
+        var cubeMapShader = Raylib.LoadShader("resources/shaders/glsl330/cubemap.vert", "resources/shaders/glsl330/cubemap.frag");
+        Raylib.SetShaderValue(cubeMapShader, Raylib.GetShaderLocation(cubeMapShader, "equirectangularMap"), 0, ShaderUniformDataType.Int);
+
+        {
+            var imgNight = Raylib.LoadTexture("resources/milkyWay.png");
+            var cubeMapNight = GenTextureCubemap(cubeMapShader, imgNight, 1024, PixelFormat.UncompressedR8G8B8A8);
+            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapNight);
+            Raylib.SetTextureFilter(cubeMapNight, TextureFilter.Bilinear);
+            Raylib.GenTextureMipmaps(ref cubeMapNight);
+            Raylib.UnloadTexture(imgNight); // Texture not required anymore, cubemap already generated
+        }
+
+        {
+            var imgDay = Raylib.LoadTexture("resources/daytime.png");
+            var cubeMapDay = GenTextureCubemap(cubeMapShader, imgDay, 1024, PixelFormat.UncompressedR8G8B8A8);
+            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Irradiance, ref cubeMapDay);
+            Raylib.SetTextureFilter(cubeMapDay, TextureFilter.Bilinear);
+            Raylib.GenTextureMipmaps(ref cubeMapDay);
+            Raylib.UnloadTexture(imgDay); // Texture not required anymore, cubemap already generated
+        }
+
+        Raylib.UnloadShader(cubeMapShader);
 
 
-    //Texture2D texHdr = Raylib.LoadTexture("resources/milkyWay.hdr"); // Load HDR panorama (sphere) texture
-    //Texture2D texHdr2 = Raylib.LoadTexture("resources/daytime.hdr"); // Load HDR panorama (sphere) texture
+        ModelsInfo[ModelId.SkyBox].Model = _skyboxModel;
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNightWithCubeMapShader OK");
+    }
 
+    private void PrepareSkyBoxDayNight()
+    {
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNight...");
 
-    //        // Generate cubemap (texture with 6 quads-cube-mapping) from panorama HDR texture
-    //        // NOTE: New texture is generated rendering to texture, shader computes the sphere->cube coordinates mapping
-    //        _skyboxModel.Materials[0].Maps[0].Texture = Raylib.LoadTexture("resources/skyGradient.png");
-    //        Raylib.SetTextureFilter(_skyboxModel.Materials[0].Maps[0].Texture, TextureFilter.Bilinear);
-    //        Raylib.SetTextureWrap(_skyboxModel.Materials[0].Maps[0].Texture, TextureWrap.Clamp);
+        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
+        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
 
-    //        //TODO check if pixel format is the right one
-    //        _skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture =
-    //            GenTextureCubemap(shdrCubemap, texHdr, 1024, PixelFormat.UncompressedR8G8B8A8);
-    //        _skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture =
-    //            GenTextureCubemap(shdrCubemap, texHdr2, 1024, PixelFormat.UncompressedR8G8B8A8);
+        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-daynight.vert",
+            "resources/shaders/glsl330/skybox-daynight.frag");
 
-    //        Raylib.SetTextureFilter(_skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture,
-    //            TextureFilter.Bilinear);
-    //        Raylib.SetTextureFilter(_skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture,
-    //            TextureFilter.Bilinear);
-    //        Raylib.GenTextureMipmaps(&_skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Cubemap].Texture);
-    //        Raylib.GenTextureMipmaps(&_skyboxModel.Materials[0].Maps[(int)MaterialMapIndex.Irradiance].Texture);
-    //        Raylib.UnloadTexture(texHdr); // Texture not required anymore, cubemap already generated
-    //        Raylib.UnloadTexture(texHdr2); // Texture not required anymore, cubemap already generated
-    //        Raylib.UnloadShader(shdrCubemap); // Unload cubemap generation shader, not required anymore
-    //    }
-    //      ModelsInfo[ModelId.SkyBox].Model = _skyboxModel;
-    //    Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBox OK");
-    //}
+        Raylib.SetShaderValue(shader,
+            Raylib.GetShaderLocation(shader, "environmentMapNight"),
+            MaterialMapIndex.Cubemap,
+            ShaderUniformDataType.Int);
+
+        Raylib.SetShaderValue(shader,
+            Raylib.GetShaderLocation(shader, "environmentMapDay"),
+            MaterialMapIndex.Irradiance,
+            ShaderUniformDataType.Int);
+
+        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
+
+        _skyboxDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
+        _skyboxDayrotationLoc = Raylib.GetShaderLocation(shader, "dayrotation");
+        _skyboxMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
+
+        var skyGradientTexture = Raylib.LoadTexture("resources/skyGradient.png");
+        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Albedo, ref skyGradientTexture);
+        Raylib.SetTextureFilter(skyGradientTexture, TextureFilter.Bilinear);
+        Raylib.SetTextureWrap(skyGradientTexture, TextureWrap.Clamp);
+
+        {
+            var imgNight = Raylib.LoadImage("resources/night-sky.png");
+            var cubeMapNight = Raylib.LoadTextureCubemap(imgNight, CubemapLayout.CrossFourByThree);
+            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapNight);
+            Raylib.SetTextureFilter(cubeMapNight, TextureFilter.Bilinear);
+            Raylib.GenTextureMipmaps(ref cubeMapNight);
+            Raylib.UnloadImage(imgNight); // Texture not required anymore, cubemap already generated
+        }
+
+        {
+            var imgDay = Raylib.LoadImage("resources/Daylight Box UV.png");
+            var cubeMapDay = Raylib.LoadTextureCubemap(imgDay, CubemapLayout.AutoDetect);
+            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Irradiance, ref cubeMapDay);
+            Raylib.SetTextureFilter(cubeMapDay, TextureFilter.Bilinear);
+            Raylib.GenTextureMipmaps(ref cubeMapDay);
+            Raylib.UnloadImage(imgDay); // Texture not required anymore, cubemap already generated
+        }
+
+        ModelsInfo[ModelId.SkyBox].Model = _skyboxModel;
+        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNight OK");
+    }
 
     private void PrepareTerrain()
     {
@@ -1176,7 +1236,8 @@ class App
 
             var cs = _clipShaders.AddClipShader(_terrainModel.Materials[0]
                 .Shader); // register as clip shader for automatization of clipPlanes
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderHeightLocs[cs], 0.0f,
+            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderHeightLocs[cs],
+                0.0f,
                 ShaderUniformDataType.Float);
             Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _clipShaders.clipShaderTypeLocs[cs], 2,
                 ShaderUniformDataType.Int);
@@ -1198,7 +1259,8 @@ class App
 
 
     // Generate cubemap texture from HDR texture
-    private static unsafe Texture2D GenTextureCubemap(Shader shader, Texture2D panorama, int size, PixelFormat format)
+    private static unsafe Texture2D GenTextureCubemap(Shader shader, Texture2D panorama, int size,
+        PixelFormat format)
     {
         Texture2D cubemap;
 
@@ -1229,7 +1291,7 @@ class App
         // Check if framebuffer is complete with attachments (valid)
         if (Rlgl.FramebufferComplete(fbo))
         {
-            Console.WriteLine($"FBO: [ID {fbo}] Framebuffer object created successfully");
+            Raylib.TraceLog(TraceLogLevel.Info ,$"FBO: [ID {fbo}] Framebuffer object created successfully");
         }
         //------------------------------------------------------------------------------------------
 
