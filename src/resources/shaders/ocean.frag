@@ -47,6 +47,7 @@ void main(void)
 	distortedTexCoords = textureCoords + vec2(distortedTexCoords.x - moveFactor, distortedTexCoords.y + moveFactor);
 	vec2 totalDistortion = (texture2D(texture2, distortedTexCoords).xy * 2.0 - 1.0) * waveStrength;
 
+
 	//vec4 normalMapColor = texture2D(texture2, textureCoords);
 	vec3 normal = normalize(vec3(totalDistortion.x*50.0 ,1.0, totalDistortion.y*50.0));//vec3(0,1,0);//normalize(vec3(normalMapColor.r*2.0 -1.0, normalMapColor.b, normalMapColor.g*2.0 -1.0));
 
@@ -73,6 +74,4 @@ void main(void)
 
 	float waterColorStrength = 0.1;
 	gl_FragColor = mix(mix(reflectColor,refractColor,fresnel),waterColor, waterColorStrength) + specularWater + specularPlane;
-
-	gl_FragColor =  reflectColor;
 }

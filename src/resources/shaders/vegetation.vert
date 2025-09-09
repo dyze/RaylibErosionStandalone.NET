@@ -52,7 +52,8 @@ void main()
     // Send vertex attributes to fragment shader
 
     vec2 animationOffset = (mvp*vec4(vertexPosition, 1.0)).xz * 320.0; // relative to view, looks better imho
-    vec2 totalDistortion = vec2(cos(radians(moveFactor*360.0 + animationOffset.x)), sin(radians(moveFactor*720.0 + animationOffset.y))*0.3) * waveStrength * (1.0 - vertexTexCoord.y);//(texture2D(sappo, vec2(moveFactor)).xy -0.5) * 2.0;
+    vec2 totalDistortion = vec2(cos(radians(moveFactor*360.0 + animationOffset.x)), 
+                                sin(radians(moveFactor*720.0 + animationOffset.y))*0.3) * waveStrength * (1.0 - vertexTexCoord.y);//(texture2D(sappo, vec2(moveFactor)).xy -0.5) * 2.0;
     vec3 offset = vec3(totalDistortion.x, 0, totalDistortion.y);
 
     fragPosition = vec3(matModel*vec4(vertexPosition + offset, 1.0));

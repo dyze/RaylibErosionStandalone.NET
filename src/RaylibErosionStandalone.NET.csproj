@@ -118,10 +118,10 @@
     <None Update="resources\shaders\vegetation.vert">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="resources\shaders\water.frag">
+    <None Update="resources\shaders\ocean.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="resources\shaders\water.vert">
+    <None Update="resources\shaders\ocean.vert">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="resources\skyGradient.png">

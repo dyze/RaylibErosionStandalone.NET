@@ -1,10 +1,11 @@
-﻿using System.Drawing;
+﻿using System.Diagnostics;
+using System.Drawing;
 using System.Numerics;
+using ImGuiNET;
 using Raylib_cs;
 using rlImGui_cs;
 using Color = Raylib_cs.Color;
 using KeyboardKey = Raylib_cs.KeyboardKey;
-using PixelFormat = Raylib_cs.PixelFormat;
 using Rectangle = Raylib_cs.Rectangle;
 using RenderTexture2D = Raylib_cs.RenderTexture2D;
 
@@ -12,25 +13,18 @@ namespace RaylibErosionStandalone;
 
 class App
 {
-    private const float WaterSpeed = 0.03f;
-    private const float TreeSpeed = 0.125f;
-    private const float DaySpeed = 0.015f;
-    private const float CloudSpeed = 0.0032f;
-    private const float SkyBoxSpeed = 0.0085f;
+    private float _daySpeed = 0.015f;
 
-    private const int MapResolution = 512; // width and height of heightmap
     private const int ClipShadersCount = 1; // number of shaders that use a clipPlane
-    private const int TreeTextureCount = 19; // number of textures for a tree
-    private const int TreeCount = 8190; // number of tree billboards
 
     private const int ScreenWidth = 1280; // initial size of window
     private const int ScreenHeight = 720;
     private const float FboSize = 2.5f; // Fame Buffer Object
     private int _windowWidthBeforeFullscreen = ScreenWidth;
     private int _windowHeightBeforeFullscreen = ScreenWidth;
-    private bool _windowSizeChanged = false; // set to true when switching to fullscreen
+    private bool _windowSizeChanged; // set to true when switching to fullscreen
 
-    private List<Size> _displayResolutions =
+    private readonly List<Size> _displayResolutions =
     [
         new(320, 180), // 0
         new(640, 36), // 1
@@ -41,80 +35,36 @@ class App
 
     private int _currentDisplayResolutionIndex = 2;
 
-    private bool _useApplicationBuffer = false; // wether to use app buffer or not
-    private bool _lockTo60Fps = false;
+    private bool _useApplicationBuffer; // whether to use app buffer or not
+    private bool _lockTo60Fps;
 
     private float _daytime = 0.4f; // range (0, 1) but is sent to shader as a range(-1, 1) normalized upon a unit sphere
 
-    private bool _dayrunning = true; // if day is animating
+    private bool _dayRunning = true; // if day is animating
 
     private float _sunAngle;
 
-    private Vector4 _ambc = new(0.22f, 0.17f, 0.41f, 0.2f); // current ambient color & intensity
+    private Vector4 _ambientColorAndIntensity = new(0.22f, 0.17f, 0.41f, 0.2f);
 
-    private List<TreeBillboard> _noTrees = new(); // keep empty
-    private List<TreeBillboard> _trees = new(); // fill with tree data
 
-    private int _totalDroplets = 0; // total amount of droplets simulated
-    private int _dropletsSinceLastTreeRegen = 0; // used to regenerate trees after certain droplets have fallen
+    private int _totalDroplets; // total amount of droplets simulated
+    private int _dropletsSinceLastTreeRegen; // used to regenerate trees after certain droplets have fallen
 
     private Shader _postProcessShader;
     private RenderTexture2D _applicationBuffer;
     private RenderTexture2D _reflectionBuffer;
     private RenderTexture2D _refractionBuffer;
 
-    private float _angle = 6.282f;
-    private float _radius = 100.0f;
+    private const float Radius = 100.0f;
+    
+    private Camera3D _camera;
 
-    private Model _terrainModel;
+    private readonly List<Light> _lights = [];
 
-    private Texture2D _dudvTex;
+    private static readonly ClipShaders ClipShaders = new();
 
+    private List<Vector4> _ambientColors = [];
 
-    private int _waterMoveFactorLoc = -1;
-    private float _waterMoveFactor = 0.0f;
-
-    private Model _cloudModel;
-    private Model _oceanModel;
-    private Model _oceanFloorModel;
-
-
-    private Shader _treeShader; // shader used for tree billboards
-    private int _treeAmbientLoc = -1;
-    private float _treeMoveFactor = 0.0f;
-    private int _treeMoveFactorLoc = -1;
-    private List<Texture2D> _treeTextures = [];
-
-
-    private float _cloudMoveFactor = 0.0f;
-    private int _cloudMoveFactorLoc = -1;
-    private int _cloudDaytimeLoc = -1;
-
-
-    private float _skyboxMoveFactor = 0.0f;
-    private int _skyboxMoveFactorLoc = -1;
-    private int _skyboxDaytimeLoc = -1;
-    private int _skyboxDayrotationLoc = -1;
-
-    private Model _skyboxModel;
-
-    private Camera3D _camera = new();
-
-    private List<Light> _lights = [];
-
-    private ErosionMaker _erosionMaker;
-
-    private static ClipShaders _clipShaders = new();
-
-    private float[] _mapData;
-    private Texture2D _heightmapTexture;
-
-    private List<Vector4> _ambientColors;
-    private int _ambientColorsNumber;
-
-    private Texture2D _terrainGradient;
-    private int _terrainDaytimeLoc = -1;
-    private int _terrainAmbientLoc = -1;
 
     enum ModelId
     {
@@ -130,7 +80,7 @@ class App
     {
         public bool Visible = true;
         public readonly string Name;
-        public bool DisableCulling = false;
+        public readonly bool DisableCulling;
         public Model Model;
 
         public ModelInfo(string name, bool disableCulling = false)
@@ -140,7 +90,7 @@ class App
         }
     }
 
-    private Dictionary<ModelId, ModelInfo> _modelsInfo = new()
+    private readonly Dictionary<ModelId, ModelInfo> _modelsInfo = new()
     {
         { ModelId.SkyBox, new("skybox", true) },
         { ModelId.Clouds, new("clouds", true) },
@@ -152,7 +102,14 @@ class App
 
     private bool _debugInfoIsVisible;
     private bool _animated = true;
+    private float _nDaytime;
 
+    private Clouds _clouds = new();
+    private SkyBox _skyBox = new();
+    private Terrain _terrain = new();
+    private Trees _trees = new();
+    private Ocean _ocean = new();
+    private OceanFloor _oceanFloor = new();
 
     public void Run()
     {
@@ -160,19 +117,14 @@ class App
         {
             var ambientColorsImage = Raylib.LoadImage("resources/ambientGradient.png");
 
-            //TODO check if equivalence is correct
             var colors = Raylib.LoadImageColors(ambientColorsImage);
             if (colors == null)
                 throw new FileLoadException("ambientGradient can't be read");
 
             _ambientColors = [];
             for (var i = 0; i < ambientColorsImage.Width; i++)
-            {
                 _ambientColors.Add(Raylib.ColorNormalize(colors[i]));
-            }
-            //_ambientColors = GetImageDataNormalized(ambientColorsImage); // array of colors for ambient color through the day
-
-            _ambientColorsNumber = ambientColorsImage.Width; // length of array
+            
             Raylib.UnloadImage(ambientColorsImage);
 
             Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint |
@@ -203,37 +155,21 @@ class App
                 CameraProjection.Perspective);
             //Raylib.SetCameraMode(camera, CAMERA_THIRD_PERSON);
 
-            PrepareClouds();
-            PrepareTerrain();
-            PrepareOcean();
-            PrepareOceanFloor();
+            _modelsInfo[ModelId.Clouds].Model = _clouds.PrepareClouds();
+            _modelsInfo[ModelId.Terrain].Model = _terrain.PrepareTerrain(ClipShaders, _ambientColorAndIntensity);
+            _modelsInfo[ModelId.Ocean].Model = _ocean.PrepareOcean(_reflectionBuffer.Texture, _refractionBuffer.Texture);
+            _modelsInfo[ModelId.OceanFloor].Model = _oceanFloor.PrepareOceanFloor(_terrain);
 
-            //PrepareSkyBoxDayNightWithCubeMapShader();
-            //PrepareSkyBoxStatic();
-            PrepareSkyBoxDayNight();
-
-
-            // Initialize the erosion maker
-            _erosionMaker = ErosionMaker.GetInstance();
+            //_modelsInfo[ModelId.SkyBox].Model = _skyBox.PrepareSkyBoxDayNightWithCubeMapShader();
+            //_modelsInfo[ModelId.SkyBox].Model = _skyBox.PrepareSkyBoxStatic();
+            _modelsInfo[ModelId.SkyBox].Model = _skyBox.PrepareSkyBoxDayNight();
 
 
-            var initialHeightmapImage =
-                Raylib.GenImagePerlinNoise(MapResolution, MapResolution, 50, 50, 4.0f); // generate fractal perlin noise
-            _mapData = new float[MapResolution * MapResolution];
+            _terrain.PrepareInitialHeightMap();
 
-            // Extract pixels and put them in mapData
-            var pixels = Raylib.LoadImageColors(initialHeightmapImage);
-            for (var i = 0; i < MapResolution * MapResolution; i++)
-            {
-                _mapData[i] = pixels[i].R / 255.0f;
-            }
 
-            Erode(pixels);
-
-            PrepareTrees();
+            _trees.PrepareTrees(_terrain, _ambientColorAndIntensity);
             PrepareLights();
-
-            //rlDisableBackfaceCulling();
 
             Raylib.SetTargetFPS(60); // Set our game to run at 60 frames-per-second
             Raylib.SetTraceLogLevel(TraceLogLevel.None); // disable logging from now on
@@ -256,22 +192,34 @@ class App
                 }
                 else
                 {
-                    Raylib.EnableCursor();
+                    if (Raylib.IsCursorHidden())
+                        Raylib.EnableCursor();
                 }
 
                 if (_animated)
                 {
-                    AnimateWater();
-                    AnimateTrees();
-                    AnimateClouds();
-                    AnimateSkyBox();
+                    _ocean.AnimateOcean();
+                    _trees.AnimateTrees();
+                    _clouds.AnimateClouds();
+                    _skyBox.AnimateSkyBox();
                     AnimateDayTime();
                     AnimateLight();
                 }
 
+                _ocean.ApplyOceanMoveFactor();
+                _trees.ApplyTreeMoveFactor();
+                _clouds.ApplyCloudMoveFactor();
+                _skyBox.ApplySkyBoxMoveFactor();
+                ApplyDayTimeFactors();
+                ApplyLightFactor();
+
 
                 Raylib.BeginDrawing();
                 rlImGui.Begin();
+
+                _ocean.RenderOceanValues();
+                RenderLightsValues();
+                RenderCameraValues();
 
                 Raylib.ClearBackground(Color.Black);
 
@@ -281,7 +229,7 @@ class App
                     Raylib.BeginTextureMode(_reflectionBuffer);
                     Raylib.ClearBackground(Color.Red);
                     _camera.Position.Y *= -1;
-                    Render3DScene(_camera, _lights, [ModelId.SkyBox, ModelId.Terrain], _noTrees, 1);
+                    Render3DScene(_camera, _lights, [ModelId.SkyBox, ModelId.Terrain], null, 1);
                     _camera.Position.Y *= -1;
                     Raylib.EndTextureMode();
                 }
@@ -290,8 +238,7 @@ class App
                     // render stuff to refraction FBO
                     Raylib.BeginTextureMode(_refractionBuffer);
                     Raylib.ClearBackground(Color.Green);
-                    List<Model> models = [];
-                    Render3DScene(_camera, _lights, [ModelId.SkyBox, ModelId.Terrain, ModelId.OceanFloor], _noTrees, 0);
+                    Render3DScene(_camera, _lights, [ModelId.SkyBox, ModelId.Terrain, ModelId.OceanFloor], null, 0);
                     Raylib.EndTextureMode();
                 }
 
@@ -301,7 +248,7 @@ class App
                     Raylib.ClearBackground(Color.DarkGreen);
                     Render3DScene(_camera, _lights,
                         [ModelId.SkyBox, ModelId.Clouds, ModelId.Terrain, ModelId.OceanFloor, ModelId.Ocean],
-                        _trees, 2);
+                        _trees._trees, 2);
                     if (_useApplicationBuffer) Raylib.EndTextureMode();
                 }
 
@@ -352,7 +299,7 @@ class App
                             F4 - toggle fullscreen
                             F5 - toggle application buffer
                             F6 - hold to hide GUI
-                            TAB - animation on/off
+                            ScrollLock - animation on/off
                             F9 - take screenshot";
 
                         Raylib.DrawText(
@@ -364,7 +311,7 @@ class App
 
                 {
                     var i = 0;
-                    foreach (var (key, value) in _modelsInfo)
+                    foreach (var (_, value) in _modelsInfo)
                     {
                         if (Raylib.IsKeyPressed(KeyboardKey.One + i)) value.Visible = !value.Visible;
                         i++;
@@ -372,87 +319,79 @@ class App
                 }
 
 
-                //if (Raylib.IsKeyDown(KeyboardKey.Z))
-                //{
-                //    // Erode
-                //    const int spd = 350;
-                //    _erosionMaker.Erode(ref _mapData, MapResolution, spd, false);
-                //    _totalDroplets += spd;
-                //    _dropletsSinceLastTreeRegen += spd;
+                if (Raylib.IsKeyDown(KeyboardKey.Z))
+                {
+                    // Erode
+                    const int spd = 350;
 
-                //    UpdatePixels(pixels);
+                    _terrain.Erode(spd);
 
-                //    if (_dropletsSinceLastTreeRegen > spd * 10)
-                //    {
-                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                //        _dropletsSinceLastTreeRegen = 0;
-                //    }
-                //}
+                    _totalDroplets += spd;
+                    _dropletsSinceLastTreeRegen += spd;
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.X))
-                //{
-                //    unsafe
-                //    {
-                //        // Erode
-                //        var stopwatch = new Stopwatch();
-                //        stopwatch.Start();
-                //        _erosionMaker.Erode(ref _mapData, MapResolution, 100000, false);
-                //        stopwatch.Stop();
-                //        var elapsedTime = stopwatch.ElapsedMilliseconds;
+                    if (_dropletsSinceLastTreeRegen > spd * 10)
+                    {
+                        _trees.GenerateTrees();
+                        _dropletsSinceLastTreeRegen = 0;
+                    }
+                }
 
-                //        Raylib.SetTraceLogLevel(TraceLogLevel.Info);
-                //        Raylib.TraceLog(TraceLogLevel.Info, $"Eroded 100000 droplets. Time elapsed: {elapsedTime} ms");
-                //        Raylib.SetTraceLogLevel(TraceLogLevel.None);
+                if (Raylib.IsKeyPressed(KeyboardKey.X))
+                {
+                    // Erode
+                    var stopwatch = new Stopwatch();
+                    stopwatch.Start();
+                    _terrain.Erode(100000);
+                    stopwatch.Stop();
+                    var elapsedTime = stopwatch.ElapsedMilliseconds;
 
-                //        _totalDroplets += 100000;
+                    Raylib.SetTraceLogLevel(TraceLogLevel.Info);
+                    Raylib.TraceLog(TraceLogLevel.Info, $"Eroded 100000 droplets. Time elapsed: {elapsedTime} ms");
+                    Raylib.SetTraceLogLevel(TraceLogLevel.None);
 
-                //        UpdatePixels(pixels);
-
-                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                //        _dropletsSinceLastTreeRegen = 0;
-                //    }
-                //}
+                    _totalDroplets += 100000;
+                    
+                    _trees.GenerateTrees();
+                    _dropletsSinceLastTreeRegen = 0;
+                }
 
 
                 //if (Raylib.IsKeyPressed(KeyboardKey.R) || Raylib.IsKeyPressed(KeyboardKey.T) ||
                 //    Raylib.IsKeyPressed(KeyboardKey.Y) ||
                 //    Raylib.IsKeyPressed(KeyboardKey.U))
                 //{
-                //    unsafe
+                //    _totalDroplets = 0;
+                //    pixels = Raylib.LoadImageColors(initialHeightmapImage);
+                //    for (var i = 0; i < MapResolution * MapResolution; i++)
                 //    {
-                //        _totalDroplets = 0;
-                //        pixels = Raylib.LoadImageColors(initialHeightmapImage);
-                //        for (var i = 0; i < MapResolution * MapResolution; i++)
-                //        {
-                //            _mapData[i] = pixels[i].R / 255.0f;
-                //        }
-
-                //        // reinit map
-                //        if (Raylib.IsKeyPressed(KeyboardKey.R))
-                //        {
-                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.SQUARE);
-                //        }
-                //        else if (Raylib.IsKeyPressed(KeyboardKey.T))
-                //        {
-                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.CIRCLE);
-                //        }
-                //        else if (Raylib.IsKeyPressed(KeyboardKey.Y))
-                //        {
-                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.DIAMOND);
-                //        }
-                //        else if (Raylib.IsKeyPressed(KeyboardKey.U))
-                //        {
-                //            _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.STAR);
-                //        }
-
-                //        _erosionMaker.Remap(ref _mapData, MapResolution); // flatten beaches
-                //                                                          // no need to reinitialize erosion
-
-                //        UpdatePixels(pixels);
-
-                //        GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
-                //        _dropletsSinceLastTreeRegen = 0;
+                //        _mapData[i] = pixels[i].R / 255.0f;
                 //    }
+
+                //    // reinit map
+                //    if (Raylib.IsKeyPressed(KeyboardKey.R))
+                //    {
+                //        _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.SQUARE);
+                //    }
+                //    else if (Raylib.IsKeyPressed(KeyboardKey.T))
+                //    {
+                //        _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.CIRCLE);
+                //    }
+                //    else if (Raylib.IsKeyPressed(KeyboardKey.Y))
+                //    {
+                //        _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.DIAMOND);
+                //    }
+                //    else if (Raylib.IsKeyPressed(KeyboardKey.U))
+                //    {
+                //        _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f, ErosionMaker.GradientType.STAR);
+                //    }
+
+                //    _erosionMaker.Remap(ref _mapData, MapResolution); // flatten beaches
+                //                                                      // no need to reinitialize erosion
+
+                //    UpdatePixels(pixels);
+
+                //    GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, false);
+                //    _dropletsSinceLastTreeRegen = 0;
                 //}
 
                 if (Raylib.IsKeyDown(KeyboardKey.O))
@@ -465,7 +404,7 @@ class App
                     _camera.Position.Y -= 0.1f;
                 }
 
-                if (Raylib.IsKeyPressed(KeyboardKey.Tab))
+                if (Raylib.IsKeyPressed(KeyboardKey.ScrollLock))
                     _animated = !_animated;
 
                 if (Raylib.IsKeyDown(KeyboardKey.C))
@@ -490,67 +429,67 @@ class App
                     RenderDebugInfo();
                 }
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
-                //{
-                //    _dayrunning = !_dayrunning;
-                //}
+                if (Raylib.IsKeyPressed(KeyboardKey.LeftControl))
+                {
+                    _dayRunning = !_dayRunning;
+                }
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.F2))
-                //{
-                //    if (_lockTo60Fps)
-                //    {
-                //        _lockTo60Fps = false;
-                //        Raylib.SetTargetFPS(0);
-                //    }
-                //    else
-                //    {
-                //        _lockTo60Fps = true;
-                //        Raylib.SetTargetFPS(60);
-                //    }
-                //}
+                if (Raylib.IsKeyPressed(KeyboardKey.F2))
+                {
+                    if (_lockTo60Fps)
+                    {
+                        _lockTo60Fps = false;
+                        Raylib.SetTargetFPS(0);
+                    }
+                    else
+                    {
+                        _lockTo60Fps = true;
+                        Raylib.SetTargetFPS(60);
+                    }
+                }
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.F3))
-                //{
-                //    _currentDisplayResolutionIndex++;
-                //    if (_currentDisplayResolutionIndex > 4)
-                //        _currentDisplayResolutionIndex = 0;
+                if (Raylib.IsKeyPressed(KeyboardKey.F3))
+                {
+                    _currentDisplayResolutionIndex++;
+                    if (_currentDisplayResolutionIndex > 4)
+                        _currentDisplayResolutionIndex = 0;
 
-                //    _windowSizeChanged = true;
-                //    Raylib.SetWindowSize(_displayResolutions[_currentDisplayResolutionIndex].Width,
-                //        _displayResolutions[_currentDisplayResolutionIndex].Height);
-                //    Raylib.SetWindowPosition((Raylib.GetMonitorWidth(0) - Raylib.GetScreenWidth()) / 2,
-                //        (Raylib.GetMonitorHeight(0) - Raylib.GetScreenHeight()) / 2);
-                //}
+                    _windowSizeChanged = true;
+                    Raylib.SetWindowSize(_displayResolutions[_currentDisplayResolutionIndex].Width,
+                        _displayResolutions[_currentDisplayResolutionIndex].Height);
+                    Raylib.SetWindowPosition((Raylib.GetMonitorWidth(0) - Raylib.GetScreenWidth()) / 2,
+                        (Raylib.GetMonitorHeight(0) - Raylib.GetScreenHeight()) / 2);
+                }
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.F4))
-                //{
-                //    _windowSizeChanged = true;
-                //    if (!Raylib.IsWindowFullscreen())
-                //    {
-                //        _windowWidthBeforeFullscreen = Raylib.GetScreenWidth();
-                //        _windowHeightBeforeFullscreen = Raylib.GetScreenHeight();
-                //        Raylib.SetWindowSize(Raylib.GetMonitorWidth(0), Raylib.GetMonitorHeight(0));
-                //    }
-                //    else
-                //    {
-                //        Raylib.SetWindowSize(_windowWidthBeforeFullscreen, _windowHeightBeforeFullscreen);
-                //    }
+                if (Raylib.IsKeyPressed(KeyboardKey.F4))
+                {
+                    _windowSizeChanged = true;
+                    if (!Raylib.IsWindowFullscreen())
+                    {
+                        _windowWidthBeforeFullscreen = Raylib.GetScreenWidth();
+                        _windowHeightBeforeFullscreen = Raylib.GetScreenHeight();
+                        Raylib.SetWindowSize(Raylib.GetMonitorWidth(0), Raylib.GetMonitorHeight(0));
+                    }
+                    else
+                    {
+                        Raylib.SetWindowSize(_windowWidthBeforeFullscreen, _windowHeightBeforeFullscreen);
+                    }
 
-                //    Raylib.ToggleFullscreen();
-                //}
+                    Raylib.ToggleFullscreen();
+                }
 
 
-                //if (Raylib.IsKeyPressed(KeyboardKey.F5))
-                //{
-                //    _useApplicationBuffer = !_useApplicationBuffer;
-                //}
+                if (Raylib.IsKeyPressed(KeyboardKey.F5))
+                {
+                    _useApplicationBuffer = !_useApplicationBuffer;
+                }
 
-                //if (Raylib.IsKeyPressed((KeyboardKey.F9)))
-                //{
-                //    // take a screenshot
-                //    var fileName = $"screenshot-{DateTime.Now}.png";
-                //    Raylib.TakeScreenshot(fileName);
-                //}
+                if (Raylib.IsKeyPressed((KeyboardKey.F9)))
+                {
+                    // take a screenshot
+                    var fileName = $"screenshot-{DateTime.Now}.png";
+                    Raylib.TakeScreenshot(fileName);
+                }
 
 
                 rlImGui.End();
@@ -567,6 +506,8 @@ class App
         }
     }
 
+    
+
     private void RenderDebugInfo()
     {
         //var destinationWidth = 400;
@@ -581,13 +522,12 @@ class App
         //    0f,
         //    Color.White);
 
-        var texture = Raylib.GetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap);
-        Raylib.DrawTextureEx(texture,
-            new Vector2(Raylib.GetScreenWidth() - texture.Width - 20.0f, 20),
-            0f, 1f,
-            Color.White);
+        //var texture = Raylib.GetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap);
+        //Raylib.DrawTextureEx(texture,
+        //    new Vector2(Raylib.GetScreenWidth() - texture.Width - 20.0f, 20),
+        //    0f, 1f,
+        //    Color.White);
 
-        // display other info for debug
         //Raylib.DrawTextureEx(_heightmapTexture,
         //    new Vector2(Raylib.GetScreenWidth() - _heightmapTexture.Width - 20.0f, 20),
         //    0f, 1f,
@@ -598,7 +538,7 @@ class App
         //    Color.Green);
 
         var text = "";
-        foreach (var (key, value) in _modelsInfo)
+        foreach (var (_, value) in _modelsInfo)
         {
             text += $"{value.Name}={value.Visible}\n";
         }
@@ -608,182 +548,93 @@ class App
         Raylib.DrawText(
             text,
             10, Raylib.GetScreenHeight() / 2, 20, Color.White);
-
-        //DrawFPS(10, 70);
     }
 
-    private unsafe void Erode(Color* pixels)
+
+    private void ApplyLightFactor()
     {
-        // Erode
-        _erosionMaker.Gradient(ref _mapData, MapResolution, 0.5f,
-            ErosionMaker.GradientType
-                .SQUARE); // apply a centered gradient to smooth out border pixel (create island at center)
-        _erosionMaker.Remap(ref _mapData, MapResolution); // flatten beaches
-        _erosionMaker.Erode(ref _mapData, MapResolution, 0, true); // Erode (0 droplets for initialization)
-
-        // Update pixels from mapData to texture
-        UpdatePixels(pixels);
-    }
-
-    private unsafe void UpdatePixels(Color* pixels)
-    {
-        // Update pixels
-        for (var i = 0; i < MapResolution * MapResolution; i++)
-        {
-            var val = (byte)(_mapData[i] * 255);
-            pixels[i].R = val;
-            pixels[i].G = val;
-            pixels[i].B = val;
-            pixels[i].A = 255;
-        }
-
-        Raylib.UnloadTexture(_heightmapTexture);
-
-        //TODO check if replacement for former "Image heightmapImage = Raylib.LoadImageEx(pixels, MapResolution, MapResolution);"
-        //Image heightmapImage = new Image();
-        var heightmapImage = Raylib.GenImageColor(MapResolution, MapResolution, Color.Red);
-
-        var k = 0;
-        var dataAsChars = (byte*)heightmapImage.Data;
-
-        for (var i = 0; i < heightmapImage.Width * heightmapImage.Height * 4; i += 4)
-        {
-            dataAsChars[i] = (byte)pixels[k].R;
-            dataAsChars[i + 1] = (byte)pixels[k].G;
-            dataAsChars[i + 2] = (byte)pixels[k].B;
-            dataAsChars[i + 3] = (byte)pixels[k].A;
-            k++;
-        }
-
-        //END_TODO
-
-        _heightmapTexture = Raylib.LoadTextureFromImage(heightmapImage); // Convert image to texture (VRAM)
-        Raylib.SetTextureFilter(_heightmapTexture, TextureFilter.Bilinear);
-        Raylib.SetTextureWrap(_heightmapTexture, TextureWrap.Clamp);
-        _terrainModel.Materials[0].Maps[2].Texture = _heightmapTexture;
-        Raylib.UnloadImage(heightmapImage); // Unload heightmap image from RAM, already uploaded to VRAM
-    }
-
-    private void AnimateWater()
-    {
-        // animate water
-        _waterMoveFactor += WaterSpeed * Raylib.GetFrameTime();
-        while (_waterMoveFactor > 1.0f)
-            _waterMoveFactor -= 1.0f;
-
-        var shader = Raylib.GetMaterial(ref _oceanModel, 0).Shader;
-        Raylib.SetShaderValue(shader, _waterMoveFactorLoc, _waterMoveFactor, ShaderUniformDataType.Float);
-    }
-
-    private void AnimateLight()
-    {
-        // Make the light orbit
-        _lights[0].Position.X = (float)(Math.Cos(_sunAngle) * _radius);
-        _lights[0].Position.Y = (float)(Math.Sin(_sunAngle) * _radius);
-        _lights[0].Position.Z =
-            (float)Math.Max(Math.Sin(_sunAngle) * _radius * 0.9f, -_radius / 4.0f); // skew sun orbit
-
         Rlights.UpdateLightValues(_lights[0]);
 
-        var shader = Raylib.GetMaterial(ref _terrainModel, 0).Shader;
 
         unsafe
         {
             // Update the light shader with the camera view position
+            var shader = Raylib.GetMaterial(ref _terrain.Model, 0).Shader;
             Raylib.SetShaderValue(shader,
                 shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
 
+            shader = Raylib.GetMaterial(ref _ocean.Model, 0).Shader;
             Raylib.SetShaderValue(shader,
-                _oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
+                _ocean.Model.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
         }
     }
 
+    private void ApplyDayTimeFactors()
+    {
+        unsafe
+        {
+            Raylib.SetShaderValue(_terrain.Model.Materials[0].Shader, _terrain.TerrainDaytimeLoc, _nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_skyBox._skyboxModel.Materials[0].Shader, _skyBox._skyboxDaytimeLoc, _nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_skyBox._skyboxModel.Materials[0].Shader, _skyBox._skyboxDayRotationLoc, _daytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_clouds.Model.Materials[0].Shader, _clouds._cloudDaytimeLoc, _nDaytime,
+                ShaderUniformDataType.Float);
+            Raylib.SetShaderValue(_terrain.Model.Materials[0].Shader, _terrain.TerrainAmbientLoc, _ambientColorAndIntensity,
+                ShaderUniformDataType.Vec4);
+            Raylib.SetShaderValue(_trees._treeShader, _trees._treeAmbientLoc, _ambientColorAndIntensity, ShaderUniformDataType.Vec4);
+        }
+    }
+
+
+
+
+
+    private void AnimateLight()
+    {
+        // Make the light orbit
+        _lights[0].Position.X = (float)(Math.Cos(_sunAngle) * Radius);
+        _lights[0].Position.Y = (float)(Math.Sin(_sunAngle) * Radius);
+        _lights[0].Position.Z =
+            (float)Math.Max(Math.Sin(_sunAngle) * Radius * 0.9f, -Radius / 4.0f); // skew sun orbit
+
+    }
+
     private void AnimateDayTime()
     {
-        if (_dayrunning)
+        if (_dayRunning)
         {
-            _daytime += DaySpeed * Raylib.GetFrameTime();
+            _daytime += _daySpeed * Raylib.GetFrameTime();
             while (_daytime > 1.0f)
-            {
                 _daytime -= 1.0f;
-            }
         }
 
         if (Raylib.IsKeyDown(KeyboardKey.Space))
         {
             //TODO check if equivalence is OK. bool was used in the equation!
-            _daytime += DaySpeed * (5.0f - (_dayrunning ? 1.0f : 0.0f)) * Raylib.GetFrameTime();
-            //_daytime += _daySpeed * (5.0f - (float)_dayrunning) * Raylib.GetFrameTime();
+            _daytime += _daySpeed * (5.0f - (_dayRunning ? 1.0f : 0.0f)) * Raylib.GetFrameTime();
+            //_daytime += _daySpeed * (5.0f - (float)_dayRunning) * Raylib.GetFrameTime();
             while (_daytime > 1.0f)
-            {
                 _daytime -= 1.0f;
-            }
         }
 
         _sunAngle = Tools.Lerp(-90, 270, _daytime) * Raylib.DEG2RAD; // -90 midnight, 90 midday
 
         // normalize it to make it look like a dot product on an unit sphere (shaders expect it this way) (-1, 1)
-        var nDaytime = (float)Math.Sin(_sunAngle);
-        var iDaytime = (int)(((nDaytime + 1.0f) / 2.0f) * (_ambientColorsNumber - 1));
-        _ambc[0] = _ambientColors[iDaytime].X; // ambient color based on daytime
-        _ambc[1] = _ambientColors[iDaytime].Y;
-        _ambc[2] = _ambientColors[iDaytime].Z;
-        _ambc[3] = Tools.Lerp(0.05f, 0.25f, ((nDaytime + 1.0f) / 2.0f)); // ambient strength based on daytime
-
-        unsafe
-        {
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainDaytimeLoc, nDaytime,
-                ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_skyboxModel.Materials[0].Shader, _skyboxDaytimeLoc, nDaytime,
-                ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_skyboxModel.Materials[0].Shader, _skyboxDayrotationLoc, _daytime,
-                ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_cloudModel.Materials[0].Shader, _cloudDaytimeLoc, nDaytime,
-                ShaderUniformDataType.Float);
-            Raylib.SetShaderValue(_terrainModel.Materials[0].Shader, _terrainAmbientLoc, _ambc,
-                ShaderUniformDataType.Vec4);
-            Raylib.SetShaderValue(_treeShader, _treeAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
-        }
+        _nDaytime = (float)Math.Sin(_sunAngle);
+        var iDaytime = (int)(((_nDaytime + 1.0f) / 2.0f) * (_ambientColors.Count - 1));
+        _ambientColorAndIntensity[0] = _ambientColors[iDaytime].X; // ambient color based on daytime
+        _ambientColorAndIntensity[1] = _ambientColors[iDaytime].Y;
+        _ambientColorAndIntensity[2] = _ambientColors[iDaytime].Z;
+        _ambientColorAndIntensity[3] = Tools.Lerp(0.05f, 0.25f, ((_nDaytime + 1.0f) / 2.0f)); // ambient strength based on daytime
     }
 
-    private void AnimateSkyBox()
-    {
-        _skyboxMoveFactor += SkyBoxSpeed * Raylib.GetFrameTime();
-        while (_skyboxMoveFactor > 1.0f)
-            _skyboxMoveFactor -= 1.0f;
 
-        var shader = Raylib.GetMaterial(ref _skyboxModel, 0).Shader;
-        Raylib.SetShaderValue(shader,
-            _skyboxMoveFactorLoc,
-            _skyboxMoveFactor,
-            ShaderUniformDataType.Float);
-    }
-
-    private void AnimateClouds()
-    {
-        _cloudMoveFactor += CloudSpeed * Raylib.GetFrameTime();
-        while (_cloudMoveFactor > 1.0f)
-            _cloudMoveFactor -= 1.0f;
-
-        var shader = Raylib.GetMaterial(ref _cloudModel, 0).Shader;
-        Raylib.SetShaderValue(shader,
-            _cloudMoveFactorLoc,
-            _cloudMoveFactor,
-            ShaderUniformDataType.Float);
-    }
-
-    private void AnimateTrees()
-    {
-        _treeMoveFactor += TreeSpeed * Raylib.GetFrameTime();
-        while (_treeMoveFactor > 1.0f)
-            _treeMoveFactor -= 1.0f;
-
-        Raylib.SetShaderValue(_treeShader, _treeMoveFactorLoc, _treeMoveFactor, ShaderUniformDataType.Float);
-    }
 
     private void HandleWindowResize()
     {
@@ -812,8 +663,8 @@ class App
             Raylib.SetTextureFilter(_refractionBuffer.Texture, TextureFilter.Bilinear);
 
             // to be sure
-            _oceanModel.Materials[0].Maps[0].Texture = _reflectionBuffer.Texture; // uniform texture0
-            _oceanModel.Materials[0].Maps[1].Texture = _refractionBuffer.Texture; // uniform texture1
+            _ocean.Model.Materials[0].Maps[0].Texture = _reflectionBuffer.Texture; // uniform texture0
+            _ocean.Model.Materials[0].Maps[1].Texture = _refractionBuffer.Texture; // uniform texture1
 
             Raylib.SetTraceLogLevel(TraceLogLevel.Info);
             Raylib.TraceLog(TraceLogLevel.Info,
@@ -832,56 +683,14 @@ class App
                 Vector3.Zero,
                 Color.White,
                 [
-                    _terrainModel.Materials[0].Shader, _oceanModel.Materials[0].Shader, _treeShader,
-                    _skyboxModel.Materials[0].Shader
+                    _terrain.Model.Materials[0].Shader, _ocean.Model.Materials[0].Shader, _trees._treeShader,
+                    _skyBox._skyboxModel.Materials[0].Shader
                 ]
             );
             _lights.Add(light);
         }
     }
 
-    private void PrepareTrees()
-    {
-        unsafe
-        {
-            for (var i = 0; i < TreeTextureCount; i++)
-            {
-                var texture = Raylib.LoadTexture($"resources/trees/b/{i}.png");
-                _treeTextures.Add(texture); // variant b of trees looks much better
-                Raylib.SetTextureFilter(texture, TextureFilter.Bilinear);
-                //GenTextureMipmaps(&treeTextures[i]); // looks better without
-            }
-
-            GenerateTrees(_erosionMaker, ref _mapData, _treeTextures, ref _trees, true);
-            var treeMaterial = Raylib.LoadMaterialDefault();
-            _treeShader = Raylib.LoadShader("resources/shaders/vegetation.vert", "resources/shaders/vegetation.frag");
-            _treeShader.Locs[(int)ShaderLocationIndex.MatrixModel] = Raylib.GetShaderLocation(_treeShader, "matModel");
-            _treeAmbientLoc = Raylib.GetShaderLocation(_treeShader, "ambient");
-            Raylib.SetShaderValue(_treeShader, _treeAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
-            treeMaterial.Shader = _treeShader;
-            treeMaterial.Maps[1].Texture = _dudvTex;
-            _treeMoveFactor = 0.0f;
-            _treeMoveFactorLoc = Raylib.GetShaderLocation(_treeShader, "moveFactor");
-        }
-    }
-
-    private void PrepareOceanFloor()
-    {
-        unsafe
-        {
-            var whiteImage = Raylib.GenImageColor(8, 8, Color.Black);
-            var whiteTexture = Raylib.LoadTextureFromImage(whiteImage);
-            Raylib.UnloadImage(whiteImage);
-            var oceanFloorMesh = Raylib.GenMeshPlane(5120, 5120, 10, 10);
-            _oceanFloorModel = Raylib.LoadModelFromMesh(oceanFloorMesh);
-            _oceanFloorModel.Transform = Raymath.MatrixTranslate(0, -1.2f, 0);
-            _oceanFloorModel.Materials[0].Maps[0].Texture = _terrainGradient;
-            _oceanFloorModel.Materials[0].Maps[2].Texture = whiteTexture;
-            _oceanFloorModel.Materials[0].Shader = _terrainModel.Materials[0].Shader;
-        }
-
-        _modelsInfo[ModelId.OceanFloor].Model = _oceanFloorModel;
-    }
 
     /// <summary>
     /// renders all 3d scene (include variants for above and below the surface)
@@ -891,13 +700,13 @@ class App
     /// <param name="modelIds"></param>
     /// <param name="trees"></param>
     /// <param name="clipPlane">0 = cull above, 1 = cull below, 2 = no cull</param>
-    void Render3DScene(Camera3D camera, List<Light> lights, List<ModelId> modelIds, List<TreeBillboard> trees,
+    void Render3DScene(Camera3D camera, List<Light> lights, List<ModelId> modelIds, List<TreeBillboard>? trees,
         int clipPlane)
     {
         Raylib.BeginMode3D(camera);
         for (var i = 0; i < ClipShadersCount; i++) // setup clip plane for shaders that use it
         {
-            Raylib.SetShaderValue(_clipShaders.clipShaders[i], _clipShaders.clipShaderTypeLocs[i], clipPlane,
+            Raylib.SetShaderValue(ClipShaders.clipShaders[i], ClipShaders.clipShaderTypeLocs[i], clipPlane,
                 ShaderUniformDataType.Int);
         }
 
@@ -921,9 +730,10 @@ class App
             }
         }
 
-        if (_modelsInfo[ModelId.Trees].Visible)
+        if (_modelsInfo[ModelId.Trees].Visible
+            && trees != null)
         {
-            Raylib.BeginShaderMode(_treeShader);
+            Raylib.BeginShaderMode(_trees._treeShader);
             for (var i = 0; i < trees.Count(); i++) // draw all trees
             {
                 Raylib.DrawBillboard(camera, trees[i].texture, trees[i].position, trees[i].scale, trees[i].color);
@@ -953,434 +763,39 @@ class App
         Raylib.EndMode3D();
     }
 
-    // generates (or regenerates) all tree billboards
-    void GenerateTrees(ErosionMaker erosionMaker, ref float[] mapData, List<Texture2D> treeTextures,
-        ref List<TreeBillboard> trees, bool generateNew)
+
+    private void RenderLightsValues()
     {
-        if (generateNew)
-            trees.Clear();
-
-        var billPosition = Vector3.Zero;
-        var billNormal = Vector3.Zero;
-        var grassSlopeThreshold = 0.2f; // different than in the terrain shader
-        var grassBlendAmount = 0.55f;
-        float grassWeight;
-        var billColor = Color.White;
-
-        for (var i = 0; i < TreeCount; i++) // 8190 max billboards, more than that and they are not cached anymore
+        if (ImGui.Begin("Lights"))
         {
-            int px, py;
-            do
-            {
-                // try to generate a billboard
-                billPosition.X = Tools.randomRange(-16, 16);
-                billPosition.Z = Tools.randomRange(-16, 16);
-                px = (int)(((billPosition.X + 16.0f) / 32.0f) * (MapResolution - 1));
-                py = (int)(((billPosition.Z + 16.0f) / 32.0f) * (MapResolution - 1));
-                billNormal = erosionMaker.GetNormal(ref mapData, MapResolution, px, py);
-                billPosition.Y = mapData[py * MapResolution + px] * 8 - 1.1f;
+            var light = _lights[0];
 
-                var slope = 1.0f - billNormal.Y;
-                var grassBlendHeight = grassSlopeThreshold * (1.0f - grassBlendAmount);
-                grassWeight = 1.0f -
-                              Math.Min(
-                                  Math.Max((slope - grassBlendHeight) / (grassSlopeThreshold - grassBlendHeight), 0.0f),
-                                  1.0f);
-            } while (billPosition.Y < 0.32f || billPosition.Y > 3.25f ||
-                     grassWeight < 0.65f); // repeat until you find valid parameters (height and normal of chosen spot)
+            ImGui.Checkbox("Enabled", ref light.Enabled);
+            var type = (int)light.Type;
+            ImGui.InputInt("Type", ref type);
+            ImGui.InputFloat3("Position", ref light.Position);
+            ImGui.InputFloat3("Target", ref light.Target);
 
-            billColor.R = (byte)((billNormal.X + 1f) * 127.5f); // terrain normal where tree is located, stored on color
-            billColor.G = (byte)((billNormal.Y + 1f) * 127.5f); // convert from range (-1, 1) to (0, 255)
-            billColor.B = (byte)((billNormal.Z + 1f) * 127.5f);
+            var color = new Vector4(light.Color.R / (float)255, light.Color.G / (float)255,
+                light.Color.B / (float)255, light.Color.A / (float)255);
 
-            if (!generateNew)
-            {
-                trees[i].position = billPosition;
-                trees[i].color = billColor;
-            }
-            else
-            {
-                var textureChoice = (int)Tools.randomRange(0, TreeTextureCount);
-                trees.Add(new TreeBillboard(
-                    treeTextures[textureChoice], billPosition, Tools.randomRange(0.6f, 1.4f) * 0.3f, billColor));
-            }
+            ImGui.ColorEdit4("Color", ref color);
+
+            ImGui.End();
         }
     }
 
-
-    private void PrepareOcean()
+    private void RenderCameraValues()
     {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareOcean...");
-
-        var oceanMesh = Raylib.GenMeshPlane(5120, 5120, 10, 10);
-        _oceanModel = Raylib.LoadModelFromMesh(oceanMesh);
-
-        _dudvTex = Raylib.LoadTexture("resources/waterDUDV.png");
-        Raylib.SetTextureFilter(_dudvTex, TextureFilter.Bilinear);
-        Raylib.GenTextureMipmaps(ref _dudvTex);
-
-        _oceanModel.Transform = Raymath.MatrixTranslate(0, 0, 0);
-
-        Raylib.SetMaterialTexture(ref _oceanModel, 0, MaterialMapIndex.Albedo, ref _reflectionBuffer.Texture);
-        Raylib.SetMaterialTexture(ref _oceanModel, 0, MaterialMapIndex.Metalness, ref _refractionBuffer.Texture);
-        Raylib.SetMaterialTexture(ref _oceanModel, 0, MaterialMapIndex.Normal, ref _dudvTex);
-
-        var shader = Raylib.LoadShader("resources/shaders/water.vert", "resources/shaders/water.frag");
-        Raylib.SetMaterialShader(ref _oceanModel, 0, ref shader);
-
-
-        _waterMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
-        //_oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
-        //    Raylib.GetShaderLocation(_oceanModel.Materials[0].Shader, "matModel");
-        //_oceanModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
-        //    Raylib.GetShaderLocation(_oceanModel.Materials[0].Shader, "viewPos");
-
-        _modelsInfo[ModelId.Ocean].Model = _oceanModel;
-
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareOcean OK");
-    }
-
-    private void PrepareClouds()
-    {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareClouds...");
-
-        var cloudTexture = Raylib.LoadTexture("resources/clouds.png");
-        Raylib.SetTextureFilter(cloudTexture, TextureFilter.Bilinear);
-        Raylib.GenTextureMipmaps(ref cloudTexture);
-
-        var cloudMesh = Raylib.GenMeshPlane(51200, 51200, 10, 10);
-        _cloudModel = Raylib.LoadModelFromMesh(cloudMesh);
-        _cloudModel.Transform = Raymath.MatrixTranslate(0, 100.0f, 0);
-
-        var shader = Raylib.LoadShader("resources/shaders/cirrostratus.vert",
-            "resources/shaders/cirrostratus.frag");
-
-        Raylib.SetMaterialShader(ref _cloudModel, 0, ref shader);
-
-        _cloudMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
-        _cloudDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
-
-        //_cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
-        //    Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "matModel");
-        //_cloudModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
-        //    Raylib.GetShaderLocation(_cloudModel.Materials[0].Shader, "viewPos");
-
-        Raylib.SetMaterialTexture(ref _cloudModel, 0, MaterialMapIndex.Albedo, ref cloudTexture);
-
-        _modelsInfo[ModelId.Clouds].Model = _cloudModel;
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareClouds OK");
-    }
-
-    private void PrepareSkyBoxStatic()
-    {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxStatic...");
-
-        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
-        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
-
-        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-static.vert",
-            "resources/shaders/glsl330/skybox-static.frag");
-
-        Raylib.SetShaderValue(shader,
-            Raylib.GetShaderLocation(shader, "environmentMap"),
-            MaterialMapIndex.Cubemap,
-            ShaderUniformDataType.Int);
-
-        Raylib.SetShaderValue(
-            shader,
-            Raylib.GetShaderLocation(shader, "flipMode"),
-            2,
-            ShaderUniformDataType.Int
-        );
-
-        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
-
-        var imgDay = Raylib.LoadImage("resources/Daylight Box UV.png");
-        var cubeMapDay = Raylib.LoadTextureCubemap(imgDay, CubemapLayout.AutoDetect);
-        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapDay);
-        Raylib.UnloadImage(imgDay); // Texture not required anymore, cubemap already generated
-
-        _modelsInfo[ModelId.SkyBox].Model = _skyboxModel;
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxStatic OK");
-    }
-
-    private void PrepareSkyBoxDayNightWithCubeMapShader()
-    {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNightWithCubeMapShader...");
-
-        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
-        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
-
-        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-daynight.vert",
-            "resources/shaders/glsl330/skybox-daynight.frag");
-
-        Raylib.SetShaderValue(shader,
-            Raylib.GetShaderLocation(shader, "environmentMapNight"),
-            MaterialMapIndex.Cubemap,
-            ShaderUniformDataType.Int);
-
-        Raylib.SetShaderValue(shader,
-            Raylib.GetShaderLocation(shader, "environmentMapDay"),
-            MaterialMapIndex.Irradiance,
-            ShaderUniformDataType.Int);
-
-        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
-
-        _skyboxDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
-        _skyboxDayrotationLoc = Raylib.GetShaderLocation(shader, "dayrotation");
-        _skyboxMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
-
-        var skyGradientTexture = Raylib.LoadTexture("resources/skyGradient.png");
-        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Albedo, ref skyGradientTexture);
-        Raylib.SetTextureFilter(skyGradientTexture, TextureFilter.Bilinear);
-        Raylib.SetTextureWrap(skyGradientTexture, TextureWrap.Clamp);
-
-        var cubeMapShader = Raylib.LoadShader("resources/shaders/glsl330/cubemap.vert",
-            "resources/shaders/glsl330/cubemap.frag");
-        Raylib.SetShaderValue(cubeMapShader, Raylib.GetShaderLocation(cubeMapShader, "equirectangularMap"), 0,
-            ShaderUniformDataType.Int);
-
+        if (ImGui.Begin("Cameras"))
         {
-            var imgNight = Raylib.LoadTexture("resources/milkyWay.png");
-            var cubeMapNight = GenTextureCubemap(cubeMapShader, imgNight, 1024, PixelFormat.UncompressedR8G8B8A8);
-            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapNight);
-            Raylib.SetTextureFilter(cubeMapNight, TextureFilter.Bilinear);
-            Raylib.GenTextureMipmaps(ref cubeMapNight);
-            Raylib.UnloadTexture(imgNight); // Texture not required anymore, cubemap already generated
+            var camera = _camera;
+
+            ImGui.InputFloat3("Position", ref camera.Position);
+            ImGui.InputFloat3("Target", ref camera.Target);
+            ImGui.InputFloat("FovY", ref camera.FovY);
+
+            ImGui.End();
         }
-
-        {
-            var imgDay = Raylib.LoadTexture("resources/daytime.png");
-            var cubeMapDay = GenTextureCubemap(cubeMapShader, imgDay, 1024, PixelFormat.UncompressedR8G8B8A8);
-            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Irradiance, ref cubeMapDay);
-            Raylib.SetTextureFilter(cubeMapDay, TextureFilter.Bilinear);
-            Raylib.GenTextureMipmaps(ref cubeMapDay);
-            Raylib.UnloadTexture(imgDay); // Texture not required anymore, cubemap already generated
-        }
-
-        Raylib.UnloadShader(cubeMapShader);
-
-
-        _modelsInfo[ModelId.SkyBox].Model = _skyboxModel;
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNightWithCubeMapShader OK");
-    }
-
-    private void PrepareSkyBoxDayNight()
-    {
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNight...");
-
-        var meshCube = Raylib.GenMeshCube(1.0f, 1.0f, 1.0f);
-        _skyboxModel = Raylib.LoadModelFromMesh(meshCube);
-
-        var shader = Raylib.LoadShader("resources/shaders/glsl330/skybox-daynight.vert",
-            "resources/shaders/glsl330/skybox-daynight.frag");
-
-        Raylib.SetShaderValue(shader,
-            Raylib.GetShaderLocation(shader, "environmentMapNight"),
-            MaterialMapIndex.Cubemap,
-            ShaderUniformDataType.Int);
-
-        Raylib.SetShaderValue(shader,
-            Raylib.GetShaderLocation(shader, "environmentMapDay"),
-            MaterialMapIndex.Irradiance,
-            ShaderUniformDataType.Int);
-
-        Raylib.SetMaterialShader(ref _skyboxModel, 0, ref shader);
-
-        _skyboxDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
-        _skyboxDayrotationLoc = Raylib.GetShaderLocation(shader, "dayrotation");
-        _skyboxMoveFactorLoc = Raylib.GetShaderLocation(shader, "moveFactor");
-
-        var skyGradientTexture = Raylib.LoadTexture("resources/skyGradient.png");
-        Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Albedo, ref skyGradientTexture);
-        Raylib.SetTextureFilter(skyGradientTexture, TextureFilter.Bilinear);
-        Raylib.SetTextureWrap(skyGradientTexture, TextureWrap.Clamp);
-
-        {
-            var imgNight = Raylib.LoadImage("resources/night-sky.png");
-            var cubeMapNight = Raylib.LoadTextureCubemap(imgNight, CubemapLayout.CrossFourByThree);
-            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Cubemap, ref cubeMapNight);
-            Raylib.SetTextureFilter(cubeMapNight, TextureFilter.Bilinear);
-            Raylib.GenTextureMipmaps(ref cubeMapNight);
-            Raylib.UnloadImage(imgNight); // Texture not required anymore, cubemap already generated
-        }
-
-        {
-            var imgDay = Raylib.LoadImage("resources/Daylight Box UV.png");
-            var cubeMapDay = Raylib.LoadTextureCubemap(imgDay, CubemapLayout.AutoDetect);
-            Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Irradiance, ref cubeMapDay);
-            Raylib.SetTextureFilter(cubeMapDay, TextureFilter.Bilinear);
-            Raylib.GenTextureMipmaps(ref cubeMapDay);
-            Raylib.UnloadImage(imgDay); // Texture not required anymore, cubemap already generated
-        }
-
-        _modelsInfo[ModelId.SkyBox].Model = _skyboxModel;
-        Raylib.TraceLog(TraceLogLevel.Info, "PrepareSkyBoxDayNight OK");
-    }
-
-    private void PrepareTerrain()
-    {
-        // TERRAIN
-        var terrainMesh = Raylib.GenMeshPlane(32, 32, 256, 256); // Generate terrain mesh (RAM and VRAM)
-        _terrainGradient =
-            Raylib.LoadTexture("resources/terrainGradient.png"); // color ramp of terrain (rock and grass)
-        //SetTextureFilter(terrainGradient, TextureFilter.Bilinear);
-        Raylib.SetTextureWrap(_terrainGradient, TextureWrap.Clamp);
-        Raylib.GenTextureMipmaps(ref _terrainGradient);
-
-        _terrainModel = Raylib.LoadModelFromMesh(terrainMesh); // Load model from generated mesh
-        _terrainModel.Transform = Raymath.MatrixTranslate(0, -1.2f, 0);
-
-        Raylib.SetMaterialTexture(ref _terrainModel, 0, MaterialMapIndex.Albedo, ref _terrainGradient);
-        Raylib.SetMaterialTexture(ref _terrainModel, 0, MaterialMapIndex.Normal, ref _heightmapTexture);
-
-        var shader = Raylib.LoadShader("resources/shaders/terrain.vert", "resources/shaders/terrain.frag");
-        Raylib.SetMaterialShader(ref _terrainModel, 0, ref shader);
-
-        // Get some shader loactions\
-        //_terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.MatrixModel] =
-        //    Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "matModel");
-        //_terrainModel.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView] =
-        //    Raylib.GetShaderLocation(_terrainModel.Materials[0].Shader, "viewPos");
-        _terrainDaytimeLoc = Raylib.GetShaderLocation(shader, "daytime");
-
-        var cs = _clipShaders.AddClipShader(shader); // register as clip shader for automatization of clipPlanes
-        Raylib.SetShaderValue(shader, _clipShaders.clipShaderHeightLocs[cs],
-            0.0f,
-            ShaderUniformDataType.Float);
-        Raylib.SetShaderValue(shader, _clipShaders.clipShaderTypeLocs[cs], 2,
-            ShaderUniformDataType.Int);
-
-        // ambient light level
-        _terrainAmbientLoc = Raylib.GetShaderLocation(shader, "ambient");
-        Raylib.SetShaderValue(shader, _terrainAmbientLoc, _ambc, ShaderUniformDataType.Vec4);
-
-        var rockNormalMap = Raylib.LoadTexture("resources/rockNormalMap.png"); // normal map
-        Raylib.SetTextureFilter(rockNormalMap, TextureFilter.Bilinear);
-        Raylib.GenTextureMipmaps(ref rockNormalMap);
-
-        unsafe
-        {
-            shader.Locs[(int)ShaderLocationIndex.MapRoughness] =
-                Raylib.GetShaderLocation(shader, "rockNormalMap");
-        }
-
-        Raylib.SetMaterialTexture(ref _terrainModel, 0, MaterialMapIndex.Roughness, ref rockNormalMap);
-
-        _modelsInfo[ModelId.Terrain].Model = _terrainModel;
-    }
-
-
-    // Generate cubemap texture from HDR texture
-    private static unsafe Texture2D GenTextureCubemap(Shader shader, Texture2D panorama, int size,
-        PixelFormat format)
-    {
-        Texture2D cubemap;
-
-        // Disable backface culling to render inside the cube
-        Rlgl.DisableBackfaceCulling();
-
-        // STEP 1: Setup framebuffer
-        //------------------------------------------------------------------------------------------
-        var rbo = Rlgl.LoadTextureDepth(size, size, true);
-        cubemap.Id = Rlgl.LoadTextureCubemap(null, size, format, 1);
-
-        var fbo = Rlgl.LoadFramebuffer();
-        Rlgl.FramebufferAttach(
-            fbo,
-            rbo,
-            FramebufferAttachType.Depth,
-            FramebufferAttachTextureType.Renderbuffer,
-            0
-        );
-        Rlgl.FramebufferAttach(
-            fbo,
-            cubemap.Id,
-            FramebufferAttachType.ColorChannel0,
-            FramebufferAttachTextureType.CubemapPositiveX,
-            0
-        );
-
-        // Check if framebuffer is complete with attachments (valid)
-        if (Rlgl.FramebufferComplete(fbo))
-        {
-            Raylib.TraceLog(TraceLogLevel.Info, $"FBO: [ID {fbo}] Framebuffer object created successfully");
-        }
-        //------------------------------------------------------------------------------------------
-
-        // STEP 2: Draw to framebuffer
-        //------------------------------------------------------------------------------------------
-        // NOTE: Shader is used to convert HDR equirectangular environment map to cubemap equivalent (6 faces)
-        Rlgl.EnableShader(shader.Id);
-
-        // Define projection matrix and send it to shader
-        var matFboProjection = Raymath.MatrixPerspective(
-            90.0f * Raylib.DEG2RAD,
-            1.0f,
-            Rlgl.CULL_DISTANCE_NEAR,
-            Rlgl.CULL_DISTANCE_FAR
-        );
-        Rlgl.SetUniformMatrix(shader.Locs[(int)ShaderLocationIndex.MatrixProjection], matFboProjection);
-
-        // Define view matrix for every side of the cubemap
-        var fboViews = new[]
-        {
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(-1.0f, 0.0f, 0.0f), new Vector3(0.0f, -1.0f, 0.0f)),
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(1.0f, 0.0f, 0.0f), new Vector3(0.0f, -1.0f, 0.0f)),
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(0.0f, 1.0f, 0.0f), new Vector3(0.0f, 0.0f, 1.0f)),
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(0.0f, -1.0f, 0.0f), new Vector3(0.0f, 0.0f, -1.0f)),
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(0.0f, 0.0f, -1.0f), new Vector3(0.0f, -1.0f, 0.0f)),
-            Raymath.MatrixLookAt(Vector3.Zero, new Vector3(0.0f, 0.0f, 1.0f), new Vector3(0.0f, -1.0f, 0.0f)),
-        };
-
-        // Set viewport to current fbo dimensions
-        Rlgl.Viewport(0, 0, size, size);
-
-        // Activate and enable texture for drawing to cubemap faces
-        Rlgl.ActiveTextureSlot(0);
-        Rlgl.EnableTexture(panorama.Id);
-
-        for (var i = 0; i < 6; i++)
-        {
-            // Set the view matrix for the current cube face
-            Rlgl.SetUniformMatrix(shader.Locs[(int)ShaderLocationIndex.MatrixView], fboViews[i]);
-
-            // Select the current cubemap face attachment for the fbo
-            // WARNING: This function by default enables->attach->disables fbo!!!
-            Rlgl.FramebufferAttach(
-                fbo,
-                cubemap.Id,
-                FramebufferAttachType.ColorChannel0,
-                FramebufferAttachTextureType.CubemapPositiveX + i,
-                0
-            );
-            Rlgl.EnableFramebuffer(fbo);
-
-            // Load and draw a cube, it uses the current enabled texture
-            Rlgl.ClearScreenBuffers();
-            Rlgl.LoadDrawCube();
-        }
-        //------------------------------------------------------------------------------------------
-
-        // STEP 3: Unload framebuffer and reset state
-        //------------------------------------------------------------------------------------------
-        Rlgl.DisableShader();
-        Rlgl.DisableTexture();
-        Rlgl.DisableFramebuffer();
-
-        // Unload framebuffer (and automatically attached depth texture/renderbuffer)
-        Rlgl.UnloadFramebuffer(fbo);
-
-        // Reset viewport dimensions to default
-        Rlgl.Viewport(0, 0, Rlgl.GetFramebufferWidth(), Rlgl.GetFramebufferHeight());
-        Rlgl.EnableBackfaceCulling();
-        //------------------------------------------------------------------------------------------
-
-        cubemap.Width = size;
-        cubemap.Height = size;
-        cubemap.Mipmaps = 1;
-        cubemap.Format = format;
-
-        return cubemap;
     }
 }
