@@ -1,15 +1,31 @@
-#version 100
-precision mediump float;
+#version 330
 
-varying vec2 textureCoords;
-varying vec4 clipSpace;
+// Input vertex attributes (from vertex shader)
+in vec2 fragTexCoord;
+in vec4 fragColor;
+in vec4 clipSpace;
+in vec3 vertexPosition;
+in vec3 fragPosition;
 
-varying vec3 fragPosition;
-
+// Input uniform values
 uniform sampler2D texture0; // reflection
 uniform sampler2D texture1; // refraction
 uniform sampler2D texture2; // DUDVMap
-//varying vec2 fragTexCoord;
+uniform vec4 colDiffuse;
+
+// Output fragment color
+out vec4 finalColor;
+
+uniform float seconds;
+
+uniform vec2 size;
+
+uniform float freqX;
+uniform float freqY;
+uniform float ampX;
+uniform float ampY;
+uniform float speedX;
+uniform float speedY;
 
 #define     MAX_LIGHTS              1
 #define     LIGHT_DIRECTIONAL       0
@@ -32,33 +48,34 @@ uniform vec3 viewPos;
 const float waveStrength = 0.03; // intensity of wave distortion
 const vec4 waterColor = vec4(0.11, 0.639, 0.925, 1.0);//vec4(0.11, 0.639, 0.925, 1.0); // base color of water
 
-void main(void) 
-{
+
+void main() {
 	float specularWater = 0.0;
 	float specularPlane = 0.0;
     vec3 viewD = normalize(viewPos - fragPosition); // view versor
 
 	vec2 normalizedDeviceSpace = (clipSpace.xy/clipSpace.w)/2.0 + 0.5; // fragment coordinates in screen space
 
-		float factor = moveFactor*100.0;
+    float pixelWidth = 1.0/size.x;
+    float pixelHeight = 1.0/size.y;
+    float aspect = pixelHeight/pixelWidth;
+    float boxLeft = 0.0;
+    float boxTop = 0.0;
 
-//
-//		vec2 distortion1 = (texture2D(texture2, vec2(textureCoords.x + factor, textureCoords.y)).xy * 2.0 - 1.0) * waveStrength;
-//		vec2 distortion2 = (texture2D(texture2, vec2(-textureCoords.x + factor, textureCoords.y + factor)).xy * 2.0 - 1.0) * waveStrength;
-//		vec2 totalDistortion = distortion1+distortion2;
-//
-//
+    vec2 p = fragTexCoord;
+    p.x += cos((fragTexCoord.y - boxTop)*freqX/(pixelWidth*750.0) + (seconds*speedX))*ampX*pixelWidth;
+    p.y += sin((fragTexCoord.x - boxLeft)*freqY*aspect/(pixelHeight*750.0) + (seconds*speedY))*ampY*pixelHeight;
 
-	vec2 distortedTexCoords = texture2D(texture2, vec2(textureCoords.x + factor, textureCoords.y)).xy * 0.1;
-	distortedTexCoords = textureCoords + vec2(distortedTexCoords.x - factor, distortedTexCoords.y + factor);
-	vec2 totalDistortion = (texture2D(texture2, distortedTexCoords).xy * 2.0 - 1.0) * waveStrength;
+    vec2 distortedTexCoords = p;
 
+    vec2 totalDistortion = (texture2D(texture2, distortedTexCoords).xy * 2.0 - 1.0) * waveStrength;
 
-	//vec4 normalMapColor = texture2D(texture2, textureCoords);
 	vec3 normal = normalize(vec3(totalDistortion.x*50.0 ,1.0, totalDistortion.y*50.0));//vec3(0,1,0);//normalize(vec3(normalMapColor.r*2.0 -1.0, normalMapColor.b, normalMapColor.g*2.0 -1.0));
 
-	float fresnel = dot(viewD, vec3(0,1,0)); // fresnel value (0 = looking horizon, 1 = looking downward)
-	fresnel = pow(fresnel, 0.325);//0.285); // reduce reflection in favor of refraction due to pow < 1
+	float fresnel = dot(viewD, vec3(0,1,0));  //fresnel value (0 = looking horizon, 1 = looking downward)
+	fresnel = pow(fresnel, 0.1);// 0.325);  //0.285); // reduce reflection in favor of refraction due to pow < 1
+
+    //float fresnel = 0.5;
 
 	for (int i = 0; i < 1; i++)//MAX_LIGHTS; i++)
     {
@@ -73,21 +90,11 @@ void main(void)
 	reflectTexCoords = clamp(reflectTexCoords+totalDistortion, 0.01, 0.99);
 	refractTexCoords = clamp(refractTexCoords+totalDistortion, 0.01, 0.99);
 
-	//	vec2 screenCoords = gl_FragCoord.xy / vec2(1280, 720); // uguale a normalizedDeviceSpace ma peggio
-
-	vec4 reflectColor = texture2D(texture0, reflectTexCoords);
+    vec4 reflectColor = texture2D(texture0, reflectTexCoords);
 	vec4 refractColor = texture2D(texture1, refractTexCoords);
 
 	float waterColorStrength = 0.1;
-	gl_FragColor = mix(reflectColor,refractColor,fresnel);
-	gl_FragColor = mix(gl_FragColor, waterColor, waterColorStrength);
-	gl_FragColor = gl_FragColor + specularWater + specularPlane;
-
-	//gl_FragColor = mix(mix(reflectColor,refractColor,fresnel),waterColor, waterColorStrength) ;
-
-	//distortedTexCoords = vec2(textureCoords.x + moveFactor*1000.0, textureCoords.y + moveFactor*10.0);
-	//gl_FragColor = texture2D(texture2, distortedTexCoords);
-
-	//gl_FragColor = texture2D(texture2, distortion1);
-	//gl_FragColor = vec4(textureCoords.x, 0, 0, 1.0);
+	finalColor = mix(reflectColor, refractColor, fresnel);
+	finalColor = mix(finalColor, waterColor, waterColorStrength);
+	finalColor = finalColor + specularWater + specularPlane;
 }

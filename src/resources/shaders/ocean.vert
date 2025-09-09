@@ -21,6 +21,7 @@ void main()
     // Send vertex attributes to fragment shader
     fragPosition = vec3(matModel*vec4(vertexPosition, 1.0));
     textureCoords = vertexTexCoord * tiling;
+    //textureCoords = vertexTexCoord;
     clipSpace = mvp*vec4(vertexPosition, 1.0);
 
     // Calculate final vertex position

@@ -299,7 +299,7 @@ class App
                             F4 - toggle fullscreen
                             F5 - toggle application buffer
                             F6 - hold to hide GUI
-                            ScrollLock - animation on/off
+                            P - animation on/off
                             F9 - take screenshot";
 
                         Raylib.DrawText(
@@ -404,7 +404,7 @@ class App
                     _camera.Position.Y -= 0.1f;
                 }
 
-                if (Raylib.IsKeyPressed(KeyboardKey.ScrollLock))
+                if (Raylib.IsKeyPressed(KeyboardKey.P))
                     _animated = !_animated;
 
                 if (Raylib.IsKeyDown(KeyboardKey.C))
@@ -565,9 +565,13 @@ class App
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
 
+
+            int locIndex = _ocean.Model.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView];
+            if(locIndex < 0)
+                Raylib.TraceLog(TraceLogLevel.Error, "VectorView loc index < 0");
             shader = Raylib.GetMaterial(ref _ocean.Model, 0).Shader;
             Raylib.SetShaderValue(shader,
-                _ocean.Model.Materials[0].Shader.Locs[(int)ShaderLocationIndex.VectorView],
+                locIndex,
                 _camera.Position,
                 ShaderUniformDataType.Vec3);
         }

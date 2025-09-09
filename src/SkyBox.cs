@@ -152,7 +152,7 @@ class SkyBox
         }
 
         {
-            var imgDay = Raylib.LoadImage("resources/Daylight Box UV.png");
+            var imgDay = Raylib.LoadImage("resources/skybox_dark.png");
             var cubeMapDay = Raylib.LoadTextureCubemap(imgDay, CubemapLayout.AutoDetect);
             Raylib.SetMaterialTexture(ref _skyboxModel, 0, MaterialMapIndex.Irradiance, ref cubeMapDay);
             Raylib.SetTextureFilter(cubeMapDay, TextureFilter.Bilinear);
